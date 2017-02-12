@@ -82,6 +82,7 @@
 #define MP4_META_BOX                        0x6d657461 // "meta"
 #define MP4_ILST_BOX                        0x696c7374 // "ilst"
 #define MP4_DATA_BOX                        0x64617461 // "data"
+#define MP4_LOCATION_BOX                    0xa978797a // ".xyz"
 
 #define MP4_HANDLER_TYPE_VIDEO              0x76696465 // "vide"
 #define MP4_HANDLER_TYPE_AUDIO              0x736f756e // "soun"
@@ -1798,6 +1799,46 @@ static off_t mp4_demux_parse_tag_data_box(mp4_demux_t *demux,
 }
 
 
+static off_t mp4_demux_parse_location_box(mp4_demux_t *demux,
+                                          mp4_box_item_t *parent,
+                                          off_t maxBytes,
+                                          mp4_track_t *track)
+{
+    off_t boxReadBytes = 0;
+    uint16_t val16;
+
+    MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 4), -1,
+            "invalid size: %ld expected %d", maxBytes, 4);
+
+    /* location_size */
+    MP4_READ_16(demux->file, val16, boxReadBytes);
+    uint16_t locationSize = ntohs(val16);
+    MP4_LOGD("# xyz: location_size=%d", locationSize);
+
+    /* language_code */
+    MP4_READ_16(demux->file, val16, boxReadBytes);
+    uint16_t languageCode = ntohs(val16);
+    MP4_LOGD("# xyz: language_code=%d", languageCode);
+
+    MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 4 + locationSize), -1,
+            "invalid size: %ld expected %d", maxBytes, 4 + locationSize);
+
+    demux->tags[MP4_METADATA_TAG_TYPE_LOCATION] = malloc(locationSize + 1);
+    MP4_RETURN_ERR_IF_FAILED((demux->tags[MP4_METADATA_TAG_TYPE_LOCATION] != NULL), -ENOMEM);
+    size_t count = fread(demux->tags[MP4_METADATA_TAG_TYPE_LOCATION], locationSize, 1, demux->file);
+    MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
+            "failed to read %u bytes from file", locationSize);
+    boxReadBytes += locationSize;
+    demux->tags[MP4_METADATA_TAG_TYPE_LOCATION][locationSize] = '\0';
+    MP4_LOGD("# xyz: location=%s", demux->tags[MP4_METADATA_TAG_TYPE_LOCATION]);
+
+    /* skip the rest of the box */
+    MP4_SKIP(demux->file, boxReadBytes, maxBytes);
+
+    return boxReadBytes;
+}
+
+
 static off_t mp4_demux_parse_children(mp4_demux_t *demux,
                                       mp4_box_item_t *parent,
                                       off_t maxBytes,
@@ -2062,6 +2103,16 @@ static off_t mp4_demux_parse_children(mp4_demux_t *demux,
                 off_t _ret = mp4_demux_parse_tag_data_box(demux, item, realBoxSize - boxReadBytes, track);
                 MP4_RETURN_ERR_IF_FAILED((_ret >= 0), -1);
                 boxReadBytes += _ret;
+                break;
+            }
+            case MP4_LOCATION_BOX:
+            {
+                if (parent->box.type == MP4_USER_DATA_BOX)
+                {
+                    off_t _ret = mp4_demux_parse_location_box(demux, item, realBoxSize - boxReadBytes, track);
+                    MP4_RETURN_ERR_IF_FAILED((_ret >= 0), -1);
+                    boxReadBytes += _ret;
+                }
                 break;
             }
             default:
