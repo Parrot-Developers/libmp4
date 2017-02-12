@@ -886,7 +886,7 @@ static off_t mp4_demux_parse_handler_reference_box(mp4_demux_t *demux,
              (char)((handlerType >> 24) & 0xFF), (char)((handlerType >> 16) & 0xFF),
              (char)((handlerType >> 8) & 0xFF), (char)(handlerType & 0xFF));
 
-    if (track)
+    if ((track) && (parent) && (parent->parent) && (parent->parent->box.type == MP4_MEDIA_BOX))
     {
         switch (handlerType)
         {
