@@ -56,6 +56,8 @@ typedef enum
     MP4_TRACK_TYPE_TEXT,
     MP4_TRACK_TYPE_CHAPTERS,
 
+    MP4_TRACK_TYPE_MAX,
+
 } mp4_track_type_t;
 
 
@@ -63,6 +65,8 @@ typedef enum
 {
     MP4_VIDEO_CODEC_UNKNOWN = 0,
     MP4_VIDEO_CODEC_AVC,
+
+    MP4_VIDEO_CODEC_MAX,
 
 } mp4_video_codec_t;
 
@@ -72,24 +76,38 @@ typedef enum
     MP4_AUDIO_CODEC_UNKNOWN = 0,
     MP4_AUDIO_CODEC_AAC,
 
+    MP4_AUDIO_CODEC_MAX,
+
 } mp4_audio_codec_t;
 
 
 typedef enum
 {
-    MP4_METADATA_TAG_TYPE_ARTIST = 0,
-    MP4_METADATA_TAG_TYPE_TITLE,
-    MP4_METADATA_TAG_TYPE_DATE,
-    MP4_METADATA_TAG_TYPE_LOCATION,
-    MP4_METADATA_TAG_TYPE_COMMENT,
-    MP4_METADATA_TAG_TYPE_COPYRIGHT,
-    MP4_METADATA_TAG_TYPE_MAKER,
-    MP4_METADATA_TAG_TYPE_MODEL,
-    MP4_METADATA_TAG_TYPE_VERSION,
-    MP4_METADATA_TAG_TYPE_ENCODER,
-    MP4_METADATA_TAG_MAX,
+    MP4_METADATA_VALUE_TYPE_ARTIST = 0,
+    MP4_METADATA_VALUE_TYPE_TITLE,
+    MP4_METADATA_VALUE_TYPE_DATE,
+    MP4_METADATA_VALUE_TYPE_LOCATION,
+    MP4_METADATA_VALUE_TYPE_COMMENT,
+    MP4_METADATA_VALUE_TYPE_COPYRIGHT,
+    MP4_METADATA_VALUE_TYPE_MAKER,
+    MP4_METADATA_VALUE_TYPE_MODEL,
+    MP4_METADATA_VALUE_TYPE_VERSION,
+    MP4_METADATA_VALUE_TYPE_ENCODER,
 
-} mp4_metadata_tag_type_t;
+    MP4_METADATA_VALUE_TYPE_MAX,
+
+} mp4_metadata_value_type_t;
+
+
+typedef enum
+{
+    MP4_METADATA_COVER_TYPE_JPEG = 0,
+    MP4_METADATA_COVER_TYPE_PNG,
+    MP4_METADATA_COVER_TYPE_BMP,
+
+    MP4_METADATA_COVER_TYPE_MAX,
+
+} mp4_metadata_cover_type_t;
 
 
 typedef struct
@@ -175,16 +193,17 @@ int mp4_demux_get_chapters
          char ***chaptersName);
 
 
-int mp4_demux_get_metadata_tags
+int mp4_demux_get_metadata_values
         (struct mp4_demux *demux,
-         char ***tags);
+         char ***values);
 
 
 int mp4_demux_get_metadata_cover
         (struct mp4_demux *demux,
          uint8_t *cover_buffer,
          unsigned int cover_buffer_size,
-         unsigned int *cover_size);
+         unsigned int *cover_size,
+         mp4_metadata_cover_type_t *cover_type);
 
 
 #ifdef __cplusplus

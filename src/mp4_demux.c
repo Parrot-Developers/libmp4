@@ -80,6 +80,7 @@
 #define MP4_CHUNK_OFFSET_BOX                0x7374636f // "stco"
 #define MP4_CHUNK_OFFSET_64_BOX             0x636f3634 // "co64"
 #define MP4_META_BOX                        0x6d657461 // "meta"
+#define MP4_KEYS_BOX                        0x6b657973 // "keys"
 #define MP4_ILST_BOX                        0x696c7374 // "ilst"
 #define MP4_DATA_BOX                        0x64617461 // "data"
 #define MP4_LOCATION_BOX                    0xa978797a // ".xyz"
@@ -95,16 +96,32 @@
 #define MP4_REFERENCE_TYPE_HINT_USED        0x68696e64 // "hind"
 #define MP4_REFERENCE_TYPE_CHAPTERS         0x63686170 // "chap"
 
-#define MP4_TAG_TYPE_ARTIST                 0x00415254 // ".ART"
-#define MP4_TAG_TYPE_TITLE                  0x006e616d // ".nam"
-#define MP4_TAG_TYPE_DATE                   0x00646179 // ".day"
-#define MP4_TAG_TYPE_COMMENT                0x00636d74 // ".cmt"
-#define MP4_TAG_TYPE_COPYRIGHT              0x00637079 // ".cpy"
-#define MP4_TAG_TYPE_MAKER                  0x006d616b // ".mak"
-#define MP4_TAG_TYPE_MODEL                  0x006d6f64 // ".mod"
-#define MP4_TAG_TYPE_VERSION                0x00737772 // ".swr"
-#define MP4_TAG_TYPE_ENCODER                0x00746f6f // ".too"
-#define MP4_TAG_TYPE_COVER                  0x636f7672 // "covr"
+#define MP4_METADATA_CLASS_UTF8             (1)
+#define MP4_METADATA_CLASS_JPEG             (13)
+#define MP4_METADATA_CLASS_PNG              (14)
+#define MP4_METADATA_CLASS_BMP              (27)
+
+#define MP4_METADATA_TAG_TYPE_ARTIST        0x00415254 // ".ART"
+#define MP4_METADATA_TAG_TYPE_TITLE         0x006e616d // ".nam"
+#define MP4_METADATA_TAG_TYPE_DATE          0x00646179 // ".day"
+#define MP4_METADATA_TAG_TYPE_COMMENT       0x00636d74 // ".cmt"
+#define MP4_METADATA_TAG_TYPE_COPYRIGHT     0x00637079 // ".cpy"
+#define MP4_METADATA_TAG_TYPE_MAKER         0x006d616b // ".mak"
+#define MP4_METADATA_TAG_TYPE_MODEL         0x006d6f64 // ".mod"
+#define MP4_METADATA_TAG_TYPE_VERSION       0x00737772 // ".swr"
+#define MP4_METADATA_TAG_TYPE_ENCODER       0x00746f6f // ".too"
+#define MP4_METADATA_TAG_TYPE_COVER         0x636f7672 // "covr"
+
+#define MP4_METADATA_KEY_ARTIST             "com.apple.quicktime.artist"
+#define MP4_METADATA_KEY_TITLE              "com.apple.quicktime.title"
+#define MP4_METADATA_KEY_DATE               "com.apple.quicktime.creationdate"
+#define MP4_METADATA_KEY_LOCATION           "com.apple.quicktime.location.ISO6709"
+#define MP4_METADATA_KEY_COMMENT            "com.apple.quicktime.comment"
+#define MP4_METADATA_KEY_COPYRIGHT          "com.apple.quicktime.copyright"
+#define MP4_METADATA_KEY_MAKER              "com.apple.quicktime.make"
+#define MP4_METADATA_KEY_MODEL              "com.apple.quicktime.model"
+#define MP4_METADATA_KEY_VERSION            "com.apple.quicktime.software"
+#define MP4_METADATA_KEY_COVER              "com.apple.quicktime.artwork"
 
 
 #define MP4_CHAPTERS_MAX (100)
@@ -210,9 +227,13 @@ typedef struct mp4_demux
     char *chaptersName[MP4_CHAPTERS_MAX];
     uint64_t chaptersTime[MP4_CHAPTERS_MAX];
     unsigned int chaptersCount;
-    char *tags[MP4_METADATA_TAG_MAX];
+    char *metadataFinalValue[MP4_METADATA_VALUE_TYPE_MAX];
     off_t coverOffset;
     uint32_t coverSize;
+    mp4_metadata_cover_type_t coverType;
+    unsigned int metadataCount;
+    char **metadataKey;
+    char **metadataValue;
 
 } mp4_demux_t;
 
@@ -1659,146 +1680,6 @@ static off_t mp4_demux_parse_chunk_offset64_box(mp4_demux_t *demux,
 }
 
 
-static off_t mp4_demux_parse_tag_data_box(mp4_demux_t *demux,
-                                          mp4_box_item_t *parent,
-                                          off_t maxBytes,
-                                          mp4_track_t *track)
-{
-    off_t boxReadBytes = 0;
-    uint32_t val32;
-
-    MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((parent->parent != NULL), -1,
-            "invalid parent");
-
-    MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 9), -1,
-            "invalid size: %ld expected %d", maxBytes, 9);
-
-    /* version & class */
-    MP4_READ_32(demux->file, val32, boxReadBytes);
-    uint32_t clazz = ntohl(val32);
-    uint8_t version = (clazz >> 24) & 0xFF;
-    clazz &= 0xFF;
-    MP4_LOGD("# data: version=%d", version);
-    MP4_LOGD("# data: class=%" PRIu32, clazz);
-
-    /* reserved */
-    MP4_READ_32(demux->file, val32, boxReadBytes);
-
-    unsigned int valueLen = maxBytes - boxReadBytes;
-
-    if ((parent->parent->box.type & 0xFFFFFF) == MP4_TAG_TYPE_ARTIST)
-    {
-        demux->tags[MP4_METADATA_TAG_TYPE_ARTIST] = malloc(valueLen + 1);
-        MP4_RETURN_ERR_IF_FAILED((demux->tags[MP4_METADATA_TAG_TYPE_ARTIST] != NULL), -ENOMEM);
-        size_t count = fread(demux->tags[MP4_METADATA_TAG_TYPE_ARTIST], valueLen, 1, demux->file);
-        MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
-                "failed to read %u bytes from file", valueLen);
-        boxReadBytes += valueLen;
-        demux->tags[MP4_METADATA_TAG_TYPE_ARTIST][valueLen] = '\0';
-        MP4_LOGD("# data: ART=%s", demux->tags[MP4_METADATA_TAG_TYPE_ARTIST]);
-    }
-    else if ((parent->parent->box.type & 0xFFFFFF) == MP4_TAG_TYPE_TITLE)
-    {
-        demux->tags[MP4_METADATA_TAG_TYPE_TITLE] = malloc(valueLen + 1);
-        MP4_RETURN_ERR_IF_FAILED((demux->tags[MP4_METADATA_TAG_TYPE_TITLE] != NULL), -ENOMEM);
-        size_t count = fread(demux->tags[MP4_METADATA_TAG_TYPE_TITLE], valueLen, 1, demux->file);
-        MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
-                "failed to read %u bytes from file", valueLen);
-        boxReadBytes += valueLen;
-        demux->tags[MP4_METADATA_TAG_TYPE_TITLE][valueLen] = '\0';
-        MP4_LOGD("# data: nam=%s", demux->tags[MP4_METADATA_TAG_TYPE_TITLE]);
-    }
-    else if ((parent->parent->box.type & 0xFFFFFF) == MP4_TAG_TYPE_DATE)
-    {
-        demux->tags[MP4_METADATA_TAG_TYPE_DATE] = malloc(valueLen + 1);
-        MP4_RETURN_ERR_IF_FAILED((demux->tags[MP4_METADATA_TAG_TYPE_DATE] != NULL), -ENOMEM);
-        size_t count = fread(demux->tags[MP4_METADATA_TAG_TYPE_DATE], valueLen, 1, demux->file);
-        MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
-                "failed to read %u bytes from file", valueLen);
-        boxReadBytes += valueLen;
-        demux->tags[MP4_METADATA_TAG_TYPE_DATE][valueLen] = '\0';
-        MP4_LOGD("# data: day=%s", demux->tags[MP4_METADATA_TAG_TYPE_DATE]);
-    }
-    else if ((parent->parent->box.type & 0xFFFFFF) == MP4_TAG_TYPE_COMMENT)
-    {
-        demux->tags[MP4_METADATA_TAG_TYPE_COMMENT] = malloc(valueLen + 1);
-        MP4_RETURN_ERR_IF_FAILED((demux->tags[MP4_METADATA_TAG_TYPE_COMMENT] != NULL), -ENOMEM);
-        size_t count = fread(demux->tags[MP4_METADATA_TAG_TYPE_COMMENT], valueLen, 1, demux->file);
-        MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
-                "failed to read %u bytes from file", valueLen);
-        boxReadBytes += valueLen;
-        demux->tags[MP4_METADATA_TAG_TYPE_COMMENT][valueLen] = '\0';
-        MP4_LOGD("# data: cmt=%s", demux->tags[MP4_METADATA_TAG_TYPE_COMMENT]);
-    }
-    else if ((parent->parent->box.type & 0xFFFFFF) == MP4_TAG_TYPE_COPYRIGHT)
-    {
-        demux->tags[MP4_METADATA_TAG_TYPE_COPYRIGHT] = malloc(valueLen + 1);
-        MP4_RETURN_ERR_IF_FAILED((demux->tags[MP4_METADATA_TAG_TYPE_COPYRIGHT] != NULL), -ENOMEM);
-        size_t count = fread(demux->tags[MP4_METADATA_TAG_TYPE_COPYRIGHT], valueLen, 1, demux->file);
-        MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
-                "failed to read %u bytes from file", valueLen);
-        boxReadBytes += valueLen;
-        demux->tags[MP4_METADATA_TAG_TYPE_COPYRIGHT][valueLen] = '\0';
-        MP4_LOGD("# data: cpy=%s", demux->tags[MP4_METADATA_TAG_TYPE_COPYRIGHT]);
-    }
-    else if ((parent->parent->box.type & 0xFFFFFF) == MP4_TAG_TYPE_MAKER)
-    {
-        demux->tags[MP4_METADATA_TAG_TYPE_MAKER] = malloc(valueLen + 1);
-        MP4_RETURN_ERR_IF_FAILED((demux->tags[MP4_METADATA_TAG_TYPE_MAKER] != NULL), -ENOMEM);
-        size_t count = fread(demux->tags[MP4_METADATA_TAG_TYPE_MAKER], valueLen, 1, demux->file);
-        MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
-                "failed to read %u bytes from file", valueLen);
-        boxReadBytes += valueLen;
-        demux->tags[MP4_METADATA_TAG_TYPE_MAKER][valueLen] = '\0';
-        MP4_LOGD("# data: mak=%s", demux->tags[MP4_METADATA_TAG_TYPE_MAKER]);
-    }
-    else if ((parent->parent->box.type & 0xFFFFFF) == MP4_TAG_TYPE_MODEL)
-    {
-        demux->tags[MP4_METADATA_TAG_TYPE_MODEL] = malloc(valueLen + 1);
-        MP4_RETURN_ERR_IF_FAILED((demux->tags[MP4_METADATA_TAG_TYPE_MODEL] != NULL), -ENOMEM);
-        size_t count = fread(demux->tags[MP4_METADATA_TAG_TYPE_MODEL], valueLen, 1, demux->file);
-        MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
-                "failed to read %u bytes from file", valueLen);
-        boxReadBytes += valueLen;
-        demux->tags[MP4_METADATA_TAG_TYPE_MODEL][valueLen] = '\0';
-        MP4_LOGD("# data: mod=%s", demux->tags[MP4_METADATA_TAG_TYPE_MODEL]);
-    }
-    else if ((parent->parent->box.type & 0xFFFFFF) == MP4_TAG_TYPE_VERSION)
-    {
-        demux->tags[MP4_METADATA_TAG_TYPE_VERSION] = malloc(valueLen + 1);
-        MP4_RETURN_ERR_IF_FAILED((demux->tags[MP4_METADATA_TAG_TYPE_VERSION] != NULL), -ENOMEM);
-        size_t count = fread(demux->tags[MP4_METADATA_TAG_TYPE_VERSION], valueLen, 1, demux->file);
-        MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
-                "failed to read %u bytes from file", valueLen);
-        boxReadBytes += valueLen;
-        demux->tags[MP4_METADATA_TAG_TYPE_VERSION][valueLen] = '\0';
-        MP4_LOGD("# data: swr=%s", demux->tags[MP4_METADATA_TAG_TYPE_VERSION]);
-    }
-    else if ((parent->parent->box.type & 0xFFFFFF) == MP4_TAG_TYPE_ENCODER)
-    {
-        demux->tags[MP4_METADATA_TAG_TYPE_ENCODER] = malloc(valueLen + 1);
-        MP4_RETURN_ERR_IF_FAILED((demux->tags[MP4_METADATA_TAG_TYPE_ENCODER] != NULL), -ENOMEM);
-        size_t count = fread(demux->tags[MP4_METADATA_TAG_TYPE_ENCODER], valueLen, 1, demux->file);
-        MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
-                "failed to read %u bytes from file", valueLen);
-        boxReadBytes += valueLen;
-        demux->tags[MP4_METADATA_TAG_TYPE_ENCODER][valueLen] = '\0';
-        MP4_LOGD("# data: too=%s", demux->tags[MP4_METADATA_TAG_TYPE_ENCODER]);
-    }
-    else if (parent->parent->box.type == MP4_TAG_TYPE_COVER)
-    {
-        demux->coverOffset = ftello(demux->file);
-        demux->coverSize = valueLen;
-        MP4_LOGD("# data: covr offset=0x%lX size=%d", demux->coverOffset, demux->coverSize);
-    }
-
-    /* skip the rest of the box */
-    MP4_SKIP(demux->file, boxReadBytes, maxBytes);
-
-    return boxReadBytes;
-}
-
-
 static off_t mp4_demux_parse_location_box(mp4_demux_t *demux,
                                           mp4_box_item_t *parent,
                                           off_t maxBytes,
@@ -1823,14 +1704,276 @@ static off_t mp4_demux_parse_location_box(mp4_demux_t *demux,
     MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 4 + locationSize), -1,
             "invalid size: %ld expected %d", maxBytes, 4 + locationSize);
 
-    demux->tags[MP4_METADATA_TAG_TYPE_LOCATION] = malloc(locationSize + 1);
-    MP4_RETURN_ERR_IF_FAILED((demux->tags[MP4_METADATA_TAG_TYPE_LOCATION] != NULL), -ENOMEM);
-    size_t count = fread(demux->tags[MP4_METADATA_TAG_TYPE_LOCATION], locationSize, 1, demux->file);
+    demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_LOCATION] = malloc(locationSize + 1);
+    MP4_RETURN_ERR_IF_FAILED((demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_LOCATION] != NULL), -ENOMEM);
+    size_t count = fread(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_LOCATION], locationSize, 1, demux->file);
     MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
             "failed to read %u bytes from file", locationSize);
     boxReadBytes += locationSize;
-    demux->tags[MP4_METADATA_TAG_TYPE_LOCATION][locationSize] = '\0';
-    MP4_LOGD("# xyz: location=%s", demux->tags[MP4_METADATA_TAG_TYPE_LOCATION]);
+    demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_LOCATION][locationSize] = '\0';
+    MP4_LOGD("# xyz: location=%s", demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_LOCATION]);
+
+    /* skip the rest of the box */
+    MP4_SKIP(demux->file, boxReadBytes, maxBytes);
+
+    return boxReadBytes;
+}
+
+
+static off_t mp4_demux_parse_metadata_keys_box(mp4_demux_t *demux,
+                                               mp4_box_item_t *parent,
+                                               off_t maxBytes,
+                                               mp4_track_t *track)
+{
+    off_t boxReadBytes = 0;
+    uint32_t val32, i;
+
+    MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 8), -1,
+            "invalid size: %ld expected %d", maxBytes, 8);
+
+    /* version & flags */
+    MP4_READ_32(demux->file, val32, boxReadBytes);
+    uint32_t flags = ntohl(val32);
+    uint8_t version = (flags >> 24) & 0xFF;
+    flags &= ((1 << 24) - 1);
+    MP4_LOGD("# keys: version=%d", version);
+    MP4_LOGD("# keys: flags=%" PRIu32, flags);
+
+    /* entry_count */
+    MP4_READ_32(demux->file, val32, boxReadBytes);
+    demux->metadataCount = ntohl(val32);
+    MP4_LOGD("# keys: entry_count=%" PRIu32, demux->metadataCount);
+
+    MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 4 + demux->metadataCount * 8), -1,
+            "invalid size: %ld expected %d", maxBytes, 4 + demux->metadataCount * 8);
+
+    demux->metadataKey = malloc(demux->metadataCount * sizeof(char*));
+    MP4_RETURN_ERR_IF_FAILED((demux->metadataKey != NULL), -ENOMEM);
+
+    demux->metadataValue = malloc(demux->metadataCount * sizeof(char*));
+    MP4_RETURN_ERR_IF_FAILED((demux->metadataValue != NULL), -ENOMEM);
+
+    for (i = 0; i < demux->metadataCount; i++)
+    {
+        /* key_size */
+        MP4_READ_32(demux->file, val32, boxReadBytes);
+        uint32_t keySize = ntohl(val32);
+        MP4_LOGD("# keys: key_size=%" PRIu32, keySize);
+
+        MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((keySize >= 8), -1,
+                "invalid key size: %" PRIu32 " expected %d", keySize, 8);
+        keySize -= 8;
+
+        /* key_namespace */
+        MP4_READ_32(demux->file, val32, boxReadBytes);
+        uint32_t keyNamespace = ntohl(val32);
+        MP4_LOGD("# keys: key_namespace=%c%c%c%c",
+                 (char)((keyNamespace >> 24) & 0xFF), (char)((keyNamespace >> 16) & 0xFF),
+                 (char)((keyNamespace >> 8) & 0xFF), (char)(keyNamespace & 0xFF));
+
+        MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes - boxReadBytes >= keySize), -1,
+                "invalid size: %ld expected %d", maxBytes - boxReadBytes, keySize);
+
+        demux->metadataKey[i] = malloc(keySize + 1);
+        MP4_RETURN_ERR_IF_FAILED((demux->metadataKey[i] != NULL), -ENOMEM);
+        size_t count = fread(demux->metadataKey[i], keySize, 1, demux->file);
+        MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
+                "failed to read %u bytes from file", keySize);
+        boxReadBytes += keySize;
+        demux->metadataKey[i][keySize] = '\0';
+        MP4_LOGD("# keys: key_value[%i]=%s", i, demux->metadataKey[i]);
+    }
+
+    /* skip the rest of the box */
+    MP4_SKIP(demux->file, boxReadBytes, maxBytes);
+
+    return boxReadBytes;
+}
+
+
+static off_t mp4_demux_parse_metadata_data_box(mp4_demux_t *demux,
+                                               mp4_box_item_t *parent,
+                                               off_t maxBytes,
+                                               mp4_track_t *track)
+{
+    off_t boxReadBytes = 0;
+    uint32_t val32;
+
+    MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((parent->parent != NULL), -1,
+            "invalid parent");
+
+    MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 9), -1,
+            "invalid size: %ld expected %d", maxBytes, 9);
+
+    /* version & class */
+    MP4_READ_32(demux->file, val32, boxReadBytes);
+    uint32_t clazz = ntohl(val32);
+    uint8_t version = (clazz >> 24) & 0xFF;
+    clazz &= 0xFF;
+    MP4_LOGD("# data: version=%d", version);
+    MP4_LOGD("# data: class=%" PRIu32, clazz);
+
+    /* reserved */
+    MP4_READ_32(demux->file, val32, boxReadBytes);
+
+    unsigned int valueLen = maxBytes - boxReadBytes;
+
+    if (clazz == MP4_METADATA_CLASS_UTF8)
+    {
+        if ((parent->parent->box.type & 0xFFFFFF) == MP4_METADATA_TAG_TYPE_ARTIST)
+        {
+            if (demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_ARTIST])
+                free(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_ARTIST]);
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_ARTIST] = malloc(valueLen + 1);
+            MP4_RETURN_ERR_IF_FAILED((demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_ARTIST] != NULL), -ENOMEM);
+            size_t count = fread(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_ARTIST], valueLen, 1, demux->file);
+            MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
+                    "failed to read %u bytes from file", valueLen);
+            boxReadBytes += valueLen;
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_ARTIST][valueLen] = '\0';
+            MP4_LOGD("# data: ART=%s", demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_ARTIST]);
+        }
+        else if ((parent->parent->box.type & 0xFFFFFF) == MP4_METADATA_TAG_TYPE_TITLE)
+        {
+            if (demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_TITLE])
+                free(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_TITLE]);
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_TITLE] = malloc(valueLen + 1);
+            MP4_RETURN_ERR_IF_FAILED((demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_TITLE] != NULL), -ENOMEM);
+            size_t count = fread(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_TITLE], valueLen, 1, demux->file);
+            MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
+                    "failed to read %u bytes from file", valueLen);
+            boxReadBytes += valueLen;
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_TITLE][valueLen] = '\0';
+            MP4_LOGD("# data: nam=%s", demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_TITLE]);
+        }
+        else if ((parent->parent->box.type & 0xFFFFFF) == MP4_METADATA_TAG_TYPE_DATE)
+        {
+            if (demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_DATE])
+                free(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_DATE]);
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_DATE] = malloc(valueLen + 1);
+            MP4_RETURN_ERR_IF_FAILED((demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_DATE] != NULL), -ENOMEM);
+            size_t count = fread(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_DATE], valueLen, 1, demux->file);
+            MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
+                    "failed to read %u bytes from file", valueLen);
+            boxReadBytes += valueLen;
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_DATE][valueLen] = '\0';
+            MP4_LOGD("# data: day=%s", demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_DATE]);
+        }
+        else if ((parent->parent->box.type & 0xFFFFFF) == MP4_METADATA_TAG_TYPE_COMMENT)
+        {
+            if (demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_COMMENT])
+                free(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_COMMENT]);
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_COMMENT] = malloc(valueLen + 1);
+            MP4_RETURN_ERR_IF_FAILED((demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_COMMENT] != NULL), -ENOMEM);
+            size_t count = fread(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_COMMENT], valueLen, 1, demux->file);
+            MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
+                    "failed to read %u bytes from file", valueLen);
+            boxReadBytes += valueLen;
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_COMMENT][valueLen] = '\0';
+            MP4_LOGD("# data: cmt=%s", demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_COMMENT]);
+        }
+        else if ((parent->parent->box.type & 0xFFFFFF) == MP4_METADATA_TAG_TYPE_COPYRIGHT)
+        {
+            if (demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_COPYRIGHT])
+                free(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_COPYRIGHT]);
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_COPYRIGHT] = malloc(valueLen + 1);
+            MP4_RETURN_ERR_IF_FAILED((demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_COPYRIGHT] != NULL), -ENOMEM);
+            size_t count = fread(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_COPYRIGHT], valueLen, 1, demux->file);
+            MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
+                    "failed to read %u bytes from file", valueLen);
+            boxReadBytes += valueLen;
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_COPYRIGHT][valueLen] = '\0';
+            MP4_LOGD("# data: cpy=%s", demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_COPYRIGHT]);
+        }
+        else if ((parent->parent->box.type & 0xFFFFFF) == MP4_METADATA_TAG_TYPE_MAKER)
+        {
+            if (demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_MAKER])
+                free(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_MAKER]);
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_MAKER] = malloc(valueLen + 1);
+            MP4_RETURN_ERR_IF_FAILED((demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_MAKER] != NULL), -ENOMEM);
+            size_t count = fread(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_MAKER], valueLen, 1, demux->file);
+            MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
+                    "failed to read %u bytes from file", valueLen);
+            boxReadBytes += valueLen;
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_MAKER][valueLen] = '\0';
+            MP4_LOGD("# data: mak=%s", demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_MAKER]);
+        }
+        else if ((parent->parent->box.type & 0xFFFFFF) == MP4_METADATA_TAG_TYPE_MODEL)
+        {
+            if (demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_MODEL])
+                free(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_MODEL]);
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_MODEL] = malloc(valueLen + 1);
+            MP4_RETURN_ERR_IF_FAILED((demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_MODEL] != NULL), -ENOMEM);
+            size_t count = fread(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_MODEL], valueLen, 1, demux->file);
+            MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
+                    "failed to read %u bytes from file", valueLen);
+            boxReadBytes += valueLen;
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_MODEL][valueLen] = '\0';
+            MP4_LOGD("# data: mod=%s", demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_MODEL]);
+        }
+        else if ((parent->parent->box.type & 0xFFFFFF) == MP4_METADATA_TAG_TYPE_VERSION)
+        {
+            if (demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_VERSION])
+                free(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_VERSION]);
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_VERSION] = malloc(valueLen + 1);
+            MP4_RETURN_ERR_IF_FAILED((demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_VERSION] != NULL), -ENOMEM);
+            size_t count = fread(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_VERSION], valueLen, 1, demux->file);
+            MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
+                    "failed to read %u bytes from file", valueLen);
+            boxReadBytes += valueLen;
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_VERSION][valueLen] = '\0';
+            MP4_LOGD("# data: swr=%s", demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_VERSION]);
+        }
+        else if ((parent->parent->box.type & 0xFFFFFF) == MP4_METADATA_TAG_TYPE_ENCODER)
+        {
+            if (demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_ENCODER])
+                free(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_ENCODER]);
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_ENCODER] = malloc(valueLen + 1);
+            MP4_RETURN_ERR_IF_FAILED((demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_ENCODER] != NULL), -ENOMEM);
+            size_t count = fread(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_ENCODER], valueLen, 1, demux->file);
+            MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
+                    "failed to read %u bytes from file", valueLen);
+            boxReadBytes += valueLen;
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_ENCODER][valueLen] = '\0';
+            MP4_LOGD("# data: too=%s", demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_ENCODER]);
+        }
+        else if ((parent->parent->box.type > 0) && (parent->parent->box.type <= demux->metadataCount))
+        {
+            uint32_t idx = parent->parent->box.type - 1;
+            demux->metadataValue[idx] = malloc(valueLen + 1);
+            MP4_RETURN_ERR_IF_FAILED((demux->metadataValue[idx] != NULL), -ENOMEM);
+            size_t count = fread(demux->metadataValue[idx], valueLen, 1, demux->file);
+            MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
+                    "failed to read %u bytes from file", valueLen);
+            boxReadBytes += valueLen;
+            demux->metadataValue[idx][valueLen] = '\0';
+            MP4_LOGD("# data: value[%" PRIu32 "]=%s", idx, demux->metadataValue[idx]);
+        }
+    }
+    else if ((clazz == MP4_METADATA_CLASS_JPEG)
+                || (clazz == MP4_METADATA_CLASS_PNG) || (clazz == MP4_METADATA_CLASS_BMP))
+    {
+        if (parent->parent->box.type == MP4_METADATA_TAG_TYPE_COVER)
+        {
+            demux->coverOffset = ftello(demux->file);
+            demux->coverSize = valueLen;
+            switch (clazz)
+            {
+                default:
+                case MP4_METADATA_CLASS_JPEG:
+                    demux->coverType = MP4_METADATA_COVER_TYPE_JPEG;
+                    break;
+                case MP4_METADATA_CLASS_PNG:
+                    demux->coverType = MP4_METADATA_COVER_TYPE_PNG;
+                    break;
+                case MP4_METADATA_CLASS_BMP:
+                    demux->coverType = MP4_METADATA_COVER_TYPE_BMP;
+                    break;
+            }
+            MP4_LOGD("# data: covr offset=0x%lX size=%d", demux->coverOffset, demux->coverSize);
+        }
+        //TODO: com.apple.quicktime.artwork
+    }
 
     /* skip the rest of the box */
     MP4_SKIP(demux->file, boxReadBytes, maxBytes);
@@ -1862,9 +2005,16 @@ static off_t mp4_demux_parse_children(mp4_demux_t *demux,
         /* box type */
         MP4_READ_32(demux->file, val32, boxReadBytes);
         box.type = ntohl(val32);
-        MP4_LOGD("offset 0x%lX box '%c%c%c%c'", ftello(demux->file),
-                 (box.type >> 24) & 0xFF, (box.type >> 16) & 0xFF,
-                 (box.type >> 8) & 0xFF, box.type & 0xFF);
+        if ((parent) && (parent->box.type == MP4_ILST_BOX) && (box.type <= demux->metadataCount))
+        {
+            MP4_LOGD("offset 0x%lX metadata box size %" PRIu32, ftello(demux->file), box.size);
+        }
+        else
+        {
+            MP4_LOGD("offset 0x%lX box '%c%c%c%c' size %" PRIu32, ftello(demux->file),
+                     (box.type >> 24) & 0xFF, (box.type >> 16) & 0xFF,
+                     (box.type >> 8) & 0xFF, box.type & 0xFF, box.size);
+        }
 
         if (box.size == 0)
         {
@@ -1900,7 +2050,7 @@ static off_t mp4_demux_parse_children(mp4_demux_t *demux,
         item->parent = parent;
         if (prev == NULL)
         {
-            parent->child = item;
+            if (parent) parent->child = item;
         }
         else
         {
@@ -2073,7 +2223,7 @@ static off_t mp4_demux_parse_children(mp4_demux_t *demux,
             }
             case MP4_META_BOX:
             {
-                if (parent->box.type == MP4_USER_DATA_BOX)
+                if ((parent) && (parent->box.type == MP4_USER_DATA_BOX))
                 {
                     MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((realBoxSize - boxReadBytes >= 4), -1,
                             "invalid size: %ld expected %d", realBoxSize - boxReadBytes, 4);
@@ -2090,7 +2240,7 @@ static off_t mp4_demux_parse_children(mp4_demux_t *demux,
                     MP4_RETURN_ERR_IF_FAILED((_ret >= 0), -1);
                     boxReadBytes += _ret;
                 }
-                else if (parent->box.type == MP4_MOVIE_BOX)
+                else if ((parent) && (parent->box.type == MP4_MOVIE_BOX))
                 {
                     off_t _ret = mp4_demux_parse_children(demux, item, realBoxSize - boxReadBytes, track);
                     MP4_RETURN_ERR_IF_FAILED((_ret >= 0), -1);
@@ -2100,14 +2250,14 @@ static off_t mp4_demux_parse_children(mp4_demux_t *demux,
             }
             case MP4_DATA_BOX:
             {
-                off_t _ret = mp4_demux_parse_tag_data_box(demux, item, realBoxSize - boxReadBytes, track);
+                off_t _ret = mp4_demux_parse_metadata_data_box(demux, item, realBoxSize - boxReadBytes, track);
                 MP4_RETURN_ERR_IF_FAILED((_ret >= 0), -1);
                 boxReadBytes += _ret;
                 break;
             }
             case MP4_LOCATION_BOX:
             {
-                if (parent->box.type == MP4_USER_DATA_BOX)
+                if ((parent) && (parent->box.type == MP4_USER_DATA_BOX))
                 {
                     off_t _ret = mp4_demux_parse_location_box(demux, item, realBoxSize - boxReadBytes, track);
                     MP4_RETURN_ERR_IF_FAILED((_ret >= 0), -1);
@@ -2115,9 +2265,19 @@ static off_t mp4_demux_parse_children(mp4_demux_t *demux,
                 }
                 break;
             }
+            case MP4_KEYS_BOX:
+            {
+                if ((parent) && (parent->box.type == MP4_META_BOX))
+                {
+                    off_t _ret = mp4_demux_parse_metadata_keys_box(demux, item, realBoxSize - boxReadBytes, track);
+                    MP4_RETURN_ERR_IF_FAILED((_ret >= 0), -1);
+                    boxReadBytes += _ret;
+                }
+                break;
+            }
             default:
             {
-                if (parent->box.type == MP4_ILST_BOX)
+                if ((parent) && (parent->box.type == MP4_ILST_BOX))
                 {
                     off_t _ret = mp4_demux_parse_children(demux, item, realBoxSize - boxReadBytes, track);
                     MP4_RETURN_ERR_IF_FAILED((_ret >= 0), -1);
@@ -2326,6 +2486,72 @@ static int mp4_demux_build_tracks(mp4_demux_t *demux)
 }
 
 
+static int mp4_demux_build_metadata(mp4_demux_t *demux)
+{
+    unsigned int i;
+
+    for (i = 0; i < demux->metadataCount; i++)
+    {
+        if (!strcmp(demux->metadataKey[i], MP4_METADATA_KEY_ARTIST))
+        {
+            if (demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_ARTIST])
+                free(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_ARTIST]);
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_ARTIST] = strdup(demux->metadataValue[i]);
+        }
+        else if (!strcmp(demux->metadataKey[i], MP4_METADATA_KEY_TITLE))
+        {
+            if (demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_TITLE])
+                free(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_TITLE]);
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_TITLE] = strdup(demux->metadataValue[i]);
+        }
+        else if (!strcmp(demux->metadataKey[i], MP4_METADATA_KEY_DATE))
+        {
+            if (demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_DATE])
+                free(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_DATE]);
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_DATE] = strdup(demux->metadataValue[i]);
+        }
+        else if (!strcmp(demux->metadataKey[i], MP4_METADATA_KEY_LOCATION))
+        {
+            if (demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_LOCATION])
+                free(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_LOCATION]);
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_LOCATION] = strdup(demux->metadataValue[i]);
+        }
+        else if (!strcmp(demux->metadataKey[i], MP4_METADATA_KEY_COMMENT))
+        {
+            if (demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_COMMENT])
+                free(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_COMMENT]);
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_COMMENT] = strdup(demux->metadataValue[i]);
+        }
+        else if (!strcmp(demux->metadataKey[i], MP4_METADATA_KEY_COPYRIGHT))
+        {
+            if (demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_COPYRIGHT])
+                free(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_COPYRIGHT]);
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_COPYRIGHT] = strdup(demux->metadataValue[i]);
+        }
+        else if (!strcmp(demux->metadataKey[i], MP4_METADATA_KEY_MAKER))
+        {
+            if (demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_MAKER])
+                free(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_MAKER]);
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_MAKER] = strdup(demux->metadataValue[i]);
+        }
+        else if (!strcmp(demux->metadataKey[i], MP4_METADATA_KEY_MODEL))
+        {
+            if (demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_MODEL])
+                free(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_MODEL]);
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_MODEL] = strdup(demux->metadataValue[i]);
+        }
+        else if (!strcmp(demux->metadataKey[i], MP4_METADATA_KEY_VERSION))
+        {
+            if (demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_VERSION])
+                free(demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_VERSION]);
+            demux->metadataFinalValue[MP4_METADATA_VALUE_TYPE_VERSION] = strdup(demux->metadataValue[i]);
+        }
+    }
+
+    return 0;
+}
+
+
 static void mp4_demux_print_children(mp4_demux_t *demux,
                                      mp4_box_item_t *parent,
                                      int level)
@@ -2442,24 +2668,23 @@ mp4_demux_t* mp4_demux_open(const char *filename)
         ret = -1;
         goto cleanup;
     }
+    ret = mp4_demux_build_metadata(demux);
+    if (ret < 0)
+    {
+        MP4_LOGE("mp4_demux_build_metadata() failed (%d)", ret);
+        ret = -1;
+        goto cleanup;
+    }
 
     mp4_demux_print_children(demux, &demux->root, 0);
 
     return demux;
 
 cleanup:
-    if (demux->file)
-    {
-        fclose(demux->file);
-    }
-
     if (demux)
     {
-        mp4_demux_free_children(demux, &demux->root);
-        mp4_demux_free_tracks(demux);
+        mp4_demux_close(demux);
     }
-
-    free(demux);
 
     return NULL;
 }
@@ -2473,13 +2698,10 @@ int mp4_demux_close(mp4_demux_t *demux)
         return -1;
     }
 
-    if (demux->file)
-    {
-        fclose(demux->file);
-    }
 
     if (demux)
     {
+        if (demux->file) fclose(demux->file);
         mp4_demux_free_children(demux, &demux->root);
         mp4_demux_free_tracks(demux);
         unsigned int i;
@@ -2487,9 +2709,16 @@ int mp4_demux_close(mp4_demux_t *demux)
         {
             free(demux->chaptersName[i]);
         }
-        for (i = 0; i < MP4_METADATA_TAG_MAX; i++)
+        for (i = 0; i < demux->metadataCount; i++)
         {
-            free(demux->tags[i]);
+            free(demux->metadataKey[i]);
+            free(demux->metadataValue[i]);
+        }
+        free(demux->metadataKey);
+        free(demux->metadataValue);
+        for (i = 0; i < MP4_METADATA_VALUE_TYPE_MAX; i++)
+        {
+            free(demux->metadataFinalValue[i]);
         }
     }
 
@@ -2786,16 +3015,16 @@ int mp4_demux_get_chapters(mp4_demux_t *demux,
 }
 
 
-int mp4_demux_get_metadata_tags(mp4_demux_t *demux,
-                                char ***tags)
+int mp4_demux_get_metadata_values(mp4_demux_t *demux,
+                                  char ***values)
 {
-    if ((!demux) || (!tags))
+    if ((!demux) || (!values))
     {
         MP4_LOGE("Invalid pointer");
         return -1;
     }
 
-    *tags = demux->tags;
+    *values = demux->metadataFinalValue;
 
     return 0;
 }
@@ -2804,7 +3033,8 @@ int mp4_demux_get_metadata_tags(mp4_demux_t *demux,
 int mp4_demux_get_metadata_cover(mp4_demux_t *demux,
                                  uint8_t *cover_buffer,
                                  unsigned int cover_buffer_size,
-                                 unsigned int *cover_size)
+                                 unsigned int *cover_size,
+                                 mp4_metadata_cover_type_t *cover_type)
 {
     if (!demux)
     {
@@ -2817,6 +3047,10 @@ int mp4_demux_get_metadata_cover(mp4_demux_t *demux,
         if (cover_size)
         {
             *cover_size = demux->coverSize;
+        }
+        if (cover_type)
+        {
+            *cover_type = demux->coverType;
         }
         if ((cover_buffer) && (demux->coverSize <= cover_buffer_size))
         {

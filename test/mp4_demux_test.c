@@ -49,7 +49,21 @@
 #include <libmp4.h>
 
 
-static const char *tag_name[MP4_METADATA_TAG_MAX] =
+static const char *video_codec_type[MP4_VIDEO_CODEC_MAX] =
+{
+    "unknown",
+    "H.264",
+};
+
+
+static const char *audio_codec_type[MP4_AUDIO_CODEC_MAX] =
+{
+    "unknown",
+    "AAC",
+};
+
+
+static const char *metadata_value_name[MP4_METADATA_VALUE_TYPE_MAX] =
 {
     "artist",
     "title",
@@ -61,6 +75,14 @@ static const char *tag_name[MP4_METADATA_TAG_MAX] =
     "model",
     "version",
     "encoder",
+};
+
+
+static const char *cover_type[MP4_METADATA_COVER_TYPE_MAX] =
+{
+    "JPEG",
+    "PNG",
+    "BMP",
 };
 
 
@@ -81,8 +103,7 @@ static void mp4_demux_print_tracks(struct mp4_demux *demux)
             {
                 case MP4_TRACK_TYPE_VIDEO:
                     printf("  type: video\n");
-                    printf("  codec: %s\n",
-                           (tk.video_codec == MP4_VIDEO_CODEC_AVC) ? "H.264" : "(unknown)");
+                    printf("  codec: %s\n", video_codec_type[tk.video_codec]);
                     printf("  dimensions=%" PRIu32 "x%" PRIu32 "\n",
                            tk.video_width, tk.video_height);
                     if (tk.has_metadata)
@@ -94,8 +115,7 @@ static void mp4_demux_print_tracks(struct mp4_demux *demux)
                     break;
                 case MP4_TRACK_TYPE_AUDIO:
                     printf("  type: audio\n");
-                    printf("  codec: %s\n",
-                           (tk.audio_codec == MP4_AUDIO_CODEC_AAC) ? "AAC" : "(unknown)");
+                    printf("  codec: %s\n", audio_codec_type[tk.audio_codec]);
                     printf("  channels: %" PRIu32 "\n", tk.audio_channel_count);
                     printf("  samples: %" PRIu32 "bit @ %.2fkHz\n",
                            tk.audio_sample_size, tk.audio_sample_rate / 1000.);
@@ -128,20 +148,20 @@ static void mp4_demux_print_tracks(struct mp4_demux *demux)
 }
 
 
-static void mp4_demux_print_tags(struct mp4_demux *demux)
+static void mp4_demux_print_metadata(struct mp4_demux *demux)
 {
-    char **tags = NULL;
+    char **values = NULL;
 
-    int ret = mp4_demux_get_metadata_tags(demux, &tags);
+    int ret = mp4_demux_get_metadata_values(demux, &values);
     if (ret == 0)
     {
-        printf("Tags\n");
+        printf("Metadata\n");
         int i;
-        for (i = 0; i < MP4_METADATA_TAG_MAX; i++)
+        for (i = 0; i < MP4_METADATA_VALUE_TYPE_MAX; i++)
         {
-            if (tags[i])
+            if (values[i])
             {
-                printf("    %s: %s\n", tag_name[i], tags[i]); 
+                printf("    %s: %s\n", metadata_value_name[i], values[i]);
             }
         }
         printf("\n");
@@ -149,7 +169,8 @@ static void mp4_demux_print_tags(struct mp4_demux *demux)
 
     uint8_t *cover_buffer = NULL;
     unsigned int cover_buffer_size = 0, cover_size = 0;
-    ret = mp4_demux_get_metadata_cover(demux, cover_buffer, cover_buffer_size, &cover_size);
+    mp4_metadata_cover_type_t type;
+    ret = mp4_demux_get_metadata_cover(demux, cover_buffer, cover_buffer_size, &cover_size, &type);
     if ((ret == 0) && (cover_size > 0))
     {
         cover_buffer_size = cover_size;
@@ -158,10 +179,10 @@ static void mp4_demux_print_tags(struct mp4_demux *demux)
         {
             return;
         }
-        ret = mp4_demux_get_metadata_cover(demux, cover_buffer, cover_buffer_size, &cover_size);
+        ret = mp4_demux_get_metadata_cover(demux, cover_buffer, cover_buffer_size, &cover_size, &type);
         if (ret == 0)
         {
-            printf("Cover present\n");
+            printf("Cover present (%s)\n", cover_type[type]);
 #if 0
             FILE *fCover = fopen("cover.jpg", "wb");
             if (fCover)
@@ -258,7 +279,7 @@ int main(int argc, char **argv)
     else
     {
         mp4_demux_print_tracks(demux);
-        mp4_demux_print_tags(demux);
+        mp4_demux_print_metadata(demux);
         mp4_demux_print_chapters(demux);
 #if 0
         mp4_demux_print_frames(demux);
