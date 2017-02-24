@@ -1747,10 +1747,10 @@ static off_t mp4_demux_parse_metadata_keys_box(mp4_demux_t *demux,
     MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 4 + demux->metadataCount * 8), -1,
             "invalid size: %ld expected %d", maxBytes, 4 + demux->metadataCount * 8);
 
-    demux->metadataKey = malloc(demux->metadataCount * sizeof(char*));
+    demux->metadataKey = calloc(demux->metadataCount, sizeof(char*));
     MP4_RETURN_ERR_IF_FAILED((demux->metadataKey != NULL), -ENOMEM);
 
-    demux->metadataValue = malloc(demux->metadataCount * sizeof(char*));
+    demux->metadataValue = calloc(demux->metadataCount, sizeof(char*));
     MP4_RETURN_ERR_IF_FAILED((demux->metadataValue != NULL), -ENOMEM);
 
     for (i = 0; i < demux->metadataCount; i++)
