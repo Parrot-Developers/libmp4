@@ -83,24 +83,6 @@ typedef enum
 
 typedef enum
 {
-    MP4_METADATA_VALUE_TYPE_ARTIST = 0,
-    MP4_METADATA_VALUE_TYPE_TITLE,
-    MP4_METADATA_VALUE_TYPE_DATE,
-    MP4_METADATA_VALUE_TYPE_LOCATION,
-    MP4_METADATA_VALUE_TYPE_COMMENT,
-    MP4_METADATA_VALUE_TYPE_COPYRIGHT,
-    MP4_METADATA_VALUE_TYPE_MAKER,
-    MP4_METADATA_VALUE_TYPE_MODEL,
-    MP4_METADATA_VALUE_TYPE_VERSION,
-    MP4_METADATA_VALUE_TYPE_ENCODER,
-
-    MP4_METADATA_VALUE_TYPE_MAX,
-
-} mp4_metadata_value_type_t;
-
-
-typedef enum
-{
     MP4_METADATA_COVER_TYPE_JPEG = 0,
     MP4_METADATA_COVER_TYPE_PNG,
     MP4_METADATA_COVER_TYPE_BMP,
@@ -193,8 +175,10 @@ int mp4_demux_get_chapters
          char ***chaptersName);
 
 
-int mp4_demux_get_metadata_values
+int mp4_demux_get_metadata_strings
         (struct mp4_demux *demux,
+         unsigned int *count,
+         char ***keys,
          char ***values);
 
 

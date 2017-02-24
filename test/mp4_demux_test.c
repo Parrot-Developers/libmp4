@@ -63,21 +63,6 @@ static const char *audio_codec_type[MP4_AUDIO_CODEC_MAX] =
 };
 
 
-static const char *metadata_value_name[MP4_METADATA_VALUE_TYPE_MAX] =
-{
-    "artist",
-    "title",
-    "date",
-    "location",
-    "comment",
-    "copyright",
-    "maker",
-    "model",
-    "version",
-    "encoder",
-};
-
-
 static const char *cover_type[MP4_METADATA_COVER_TYPE_MAX] =
 {
     "JPEG",
@@ -150,18 +135,20 @@ static void mp4_demux_print_tracks(struct mp4_demux *demux)
 
 static void mp4_demux_print_metadata(struct mp4_demux *demux)
 {
+    unsigned int count = 0;
+    char **keys = NULL;
     char **values = NULL;
 
-    int ret = mp4_demux_get_metadata_values(demux, &values);
-    if (ret == 0)
+    int ret = mp4_demux_get_metadata_strings(demux, &count, &keys, &values);
+    if ((ret == 0) && (count > 0))
     {
         printf("Metadata\n");
-        int i;
-        for (i = 0; i < MP4_METADATA_VALUE_TYPE_MAX; i++)
+        unsigned int i;
+        for (i = 0; i < count; i++)
         {
-            if (values[i])
+            if ((keys[i]) && (values[i]))
             {
-                printf("    %s: %s\n", metadata_value_name[i], values[i]);
+                printf("    %s: %s\n", keys[i], values[i]);
             }
         }
         printf("\n");
@@ -182,7 +169,7 @@ static void mp4_demux_print_metadata(struct mp4_demux *demux)
         ret = mp4_demux_get_metadata_cover(demux, cover_buffer, cover_buffer_size, &cover_size, &type);
         if (ret == 0)
         {
-            printf("Cover present (%s)\n", cover_type[type]);
+            printf("Cover present (%s)\n\n", cover_type[type]);
 #if 0
             FILE *fCover = fopen("cover.jpg", "wb");
             if (fCover)
@@ -203,7 +190,7 @@ static void mp4_demux_print_chapters(struct mp4_demux *demux)
     char **chaptersName = NULL;
 
     int ret = mp4_demux_get_chapters(demux, &chaptersCount, &chaptersTime, &chaptersName);
-    if (ret == 0)
+    if ((ret == 0) && (chaptersCount > 0))
     {
         printf("Chapters\n");
         unsigned int i;
