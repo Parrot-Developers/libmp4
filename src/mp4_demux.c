@@ -1953,7 +1953,9 @@ static off_t mp4_demux_parse_metadata_data_box(mp4_demux_t *demux,
     else if ((clazz == MP4_METADATA_CLASS_JPEG)
                 || (clazz == MP4_METADATA_CLASS_PNG) || (clazz == MP4_METADATA_CLASS_BMP))
     {
-        if (parent->parent->box.type == MP4_METADATA_TAG_TYPE_COVER)
+        if ((parent->parent->box.type == MP4_METADATA_TAG_TYPE_COVER) ||
+                ((parent->parent->box.type > 0) && (parent->parent->box.type <= demux->metadataCount)
+                    && (!strcmp(demux->metadataKey[parent->parent->box.type - 1], MP4_METADATA_KEY_COVER))))
         {
             demux->coverOffset = ftello(demux->file);
             demux->coverSize = valueLen;
@@ -1972,7 +1974,6 @@ static off_t mp4_demux_parse_metadata_data_box(mp4_demux_t *demux,
             }
             MP4_LOGD("# data: covr offset=0x%lX size=%d", demux->coverOffset, demux->coverSize);
         }
-        //TODO: com.apple.quicktime.artwork
     }
 
     /* skip the rest of the box */
