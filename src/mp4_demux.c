@@ -123,6 +123,7 @@
 #define MP4_METADATA_KEY_VERSION            "com.apple.quicktime.software"
 #define MP4_METADATA_KEY_COVER              "com.apple.quicktime.artwork"
 
+#define MP4_MAC_TO_UNIX_EPOCH_OFFSET (0x7c25b080UL)
 
 #define MP4_CHAPTERS_MAX (100)
 
@@ -172,6 +173,8 @@ typedef struct mp4_track_s
     mp4_track_type_t type;
     uint32_t timescale;
     uint64_t duration;
+    uint64_t creationTime;
+    uint64_t modificationTime;
     uint32_t currentSample;
     uint32_t sampleCount;
     uint32_t *sampleSize;
@@ -223,6 +226,9 @@ typedef struct mp4_demux
     mp4_track_t *track;
     unsigned int trackCount;
     uint32_t timescale;
+    uint64_t duration;
+    uint64_t creationTime;
+    uint64_t modificationTime;
 
     char *chaptersName[MP4_CHAPTERS_MAX];
     uint64_t chaptersTime[MP4_CHAPTERS_MAX];
@@ -399,17 +405,17 @@ static off_t mp4_demux_parse_movie_header_box(mp4_demux_t *demux,
 
         /* creation_time */
         MP4_READ_32(demux->file, val32, boxReadBytes);
-        uint64_t creationTime = (uint64_t)ntohl(val32) << 32;
+        demux->creationTime = (uint64_t)ntohl(val32) << 32;
         MP4_READ_32(demux->file, val32, boxReadBytes);
-        creationTime |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
-        MP4_LOGD("# mvhd: creation_time=%" PRIu64, creationTime);
+        demux->creationTime |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
+        MP4_LOGD("# mvhd: creation_time=%" PRIu64, demux->creationTime);
 
         /* modification_time */
         MP4_READ_32(demux->file, val32, boxReadBytes);
-        uint64_t modificationTime = (uint64_t)ntohl(val32) << 32;
+        demux->modificationTime = (uint64_t)ntohl(val32) << 32;
         MP4_READ_32(demux->file, val32, boxReadBytes);
-        modificationTime |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
-        MP4_LOGD("# mvhd: modification_time=%" PRIu64, modificationTime);
+        demux->modificationTime |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
+        MP4_LOGD("# mvhd: modification_time=%" PRIu64, demux->modificationTime);
 
         /* timescale */
         MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -418,25 +424,25 @@ static off_t mp4_demux_parse_movie_header_box(mp4_demux_t *demux,
 
         /* duration */
         MP4_READ_32(demux->file, val32, boxReadBytes);
-        uint64_t duration = (uint64_t)ntohl(val32) << 32;
+        demux->duration = (uint64_t)ntohl(val32) << 32;
         MP4_READ_32(demux->file, val32, boxReadBytes);
-        duration |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
-        unsigned int hrs = (unsigned int)((duration + demux->timescale / 2) / demux->timescale / 60 / 60);
-        unsigned int min = (unsigned int)((duration + demux->timescale / 2) / demux->timescale / 60 - hrs * 60);
-        unsigned int sec = (unsigned int)((duration + demux->timescale / 2) / demux->timescale - hrs * 60 * 60 - min * 60);
-        MP4_LOGD("# mvhd: duration=%" PRIu64 " (%02d:%02d:%02d)", duration, hrs, min, sec);
+        demux->duration |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
+        unsigned int hrs = (unsigned int)((demux->duration + demux->timescale / 2) / demux->timescale / 60 / 60);
+        unsigned int min = (unsigned int)((demux->duration + demux->timescale / 2) / demux->timescale / 60 - hrs * 60);
+        unsigned int sec = (unsigned int)((demux->duration + demux->timescale / 2) / demux->timescale - hrs * 60 * 60 - min * 60);
+        MP4_LOGD("# mvhd: duration=%" PRIu64 " (%02d:%02d:%02d)", demux->duration, hrs, min, sec);
     }
     else
     {
         /* creation_time */
         MP4_READ_32(demux->file, val32, boxReadBytes);
-        uint32_t creationTime = ntohl(val32);
-        MP4_LOGD("# mvhd: creation_time=%" PRIu32, creationTime);
+        demux->creationTime = ntohl(val32);
+        MP4_LOGD("# mvhd: creation_time=%" PRIu64, demux->creationTime);
 
         /* modification_time */
         MP4_READ_32(demux->file, val32, boxReadBytes);
-        uint32_t modificationTime = ntohl(val32);
-        MP4_LOGD("# mvhd: modification_time=%" PRIu32, modificationTime);
+        demux->modificationTime = ntohl(val32);
+        MP4_LOGD("# mvhd: modification_time=%" PRIu64, demux->modificationTime);
 
         /* timescale */
         MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -445,11 +451,11 @@ static off_t mp4_demux_parse_movie_header_box(mp4_demux_t *demux,
 
         /* duration */
         MP4_READ_32(demux->file, val32, boxReadBytes);
-        uint32_t duration = ntohl(val32);
-        unsigned int hrs = (unsigned int)((duration + demux->timescale / 2) / demux->timescale / 60 / 60);
-        unsigned int min = (unsigned int)((duration + demux->timescale / 2) / demux->timescale / 60 - hrs * 60);
-        unsigned int sec = (unsigned int)((duration + demux->timescale / 2) / demux->timescale - hrs * 60 * 60 - min * 60);
-        MP4_LOGD("# mvhd: duration=%" PRIu32 " (%02d:%02d:%02d)", duration, hrs, min, sec);
+        demux->duration = ntohl(val32);
+        unsigned int hrs = (unsigned int)((demux->duration + demux->timescale / 2) / demux->timescale / 60 / 60);
+        unsigned int min = (unsigned int)((demux->duration + demux->timescale / 2) / demux->timescale / 60 - hrs * 60);
+        unsigned int sec = (unsigned int)((demux->duration + demux->timescale / 2) / demux->timescale - hrs * 60 * 60 - min * 60);
+        MP4_LOGD("# mvhd: duration=%" PRIu64 " (%02d:%02d:%02d)", demux->duration, hrs, min, sec);
     }
 
     /* rate */
@@ -684,17 +690,17 @@ static off_t mp4_demux_parse_media_header_box(mp4_demux_t *demux,
 
         /* creation_time */
         MP4_READ_32(demux->file, val32, boxReadBytes);
-        uint64_t creationTime = (uint64_t)ntohl(val32) << 32;
+        track->creationTime = (uint64_t)ntohl(val32) << 32;
         MP4_READ_32(demux->file, val32, boxReadBytes);
-        creationTime |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
-        MP4_LOGD("# mdhd: creation_time=%" PRIu64, creationTime);
+        track->creationTime |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
+        MP4_LOGD("# mdhd: creation_time=%" PRIu64, track->creationTime);
 
         /* modification_time */
         MP4_READ_32(demux->file, val32, boxReadBytes);
-        uint64_t modificationTime = (uint64_t)ntohl(val32) << 32;
+        track->modificationTime = (uint64_t)ntohl(val32) << 32;
         MP4_READ_32(demux->file, val32, boxReadBytes);
-        modificationTime |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
-        MP4_LOGD("# mdhd: modification_time=%" PRIu64, modificationTime);
+        track->modificationTime |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
+        MP4_LOGD("# mdhd: modification_time=%" PRIu64, track->modificationTime);
 
         /* timescale */
         MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -715,13 +721,13 @@ static off_t mp4_demux_parse_media_header_box(mp4_demux_t *demux,
     {
         /* creation_time */
         MP4_READ_32(demux->file, val32, boxReadBytes);
-        uint32_t creationTime = ntohl(val32);
-        MP4_LOGD("# mdhd: creation_time=%" PRIu32, creationTime);
+        track->creationTime = ntohl(val32);
+        MP4_LOGD("# mdhd: creation_time=%" PRIu64, track->creationTime);
 
         /* modification_time */
         MP4_READ_32(demux->file, val32, boxReadBytes);
-        uint32_t modificationTime = ntohl(val32);
-        MP4_LOGD("# mdhd: modification_time=%" PRIu32, modificationTime);
+        track->modificationTime = ntohl(val32);
+        MP4_LOGD("# mdhd: modification_time=%" PRIu64, track->modificationTime);
 
         /* timescale */
         MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -2876,6 +2882,26 @@ int mp4_demux_seek(mp4_demux_t *demux,
 }
 
 
+int mp4_demux_get_media_info(mp4_demux_t *demux,
+                             mp4_media_info_t *media_info)
+{
+    if ((!demux) || (!media_info))
+    {
+        MP4_LOGE("Invalid pointer");
+        return -1;
+    }
+
+    memset(media_info, 0, sizeof(mp4_media_info_t));
+
+    media_info->duration = (demux->duration * 1000000 + demux->timescale / 2) / demux->timescale;
+    media_info->creation_time = demux->creationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET;
+    media_info->modification_time = demux->creationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET;
+    media_info->track_count = demux->trackCount;
+
+    return 0;
+}
+
+
 int mp4_demux_get_track_count(mp4_demux_t *demux)
 {
     if (!demux)
@@ -2915,6 +2941,8 @@ int mp4_demux_get_track_info(mp4_demux_t *demux,
         track_info->id = tk->id;
         track_info->type = tk->type;
         track_info->duration = (tk->duration * 1000000 + tk->timescale / 2) / tk->timescale;
+        track_info->creation_time = tk->creationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET;
+        track_info->modification_time = tk->creationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET;
         track_info->sample_count = tk->sampleCount;
         track_info->has_metadata = (tk->metadata) ? 1 : 0;
         if (tk->metadata)

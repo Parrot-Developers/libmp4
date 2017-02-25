@@ -45,8 +45,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <arpa/inet.h>
+#include <time.h>
 
 #include <libmp4.h>
+
+
+#define DATE_SIZE 23
+#define DATE_FORMAT "%FT%H%M%S%z"
 
 
 static const char *video_codec_type[MP4_VIDEO_CODEC_MAX] =
@@ -71,6 +76,38 @@ static const char *cover_type[MP4_METADATA_COVER_TYPE_MAX] =
 };
 
 
+static void mp4_demux_print_info(struct mp4_demux *demux)
+{
+    mp4_media_info_t info;
+    int ret;
+
+    ret = mp4_demux_get_media_info(demux, &info);
+    if (ret == 0)
+    {
+        time_t creationTime = (time_t)info.creation_time;
+        time_t modificationTime = (time_t)info.modification_time;
+        struct tm creationTimeInfo;
+        struct tm modificationTimeInfo;
+        char creationTimeStr[DATE_SIZE + 1];
+        char modificationTimeStr[DATE_SIZE + 1];
+        localtime_r(&creationTime, &creationTimeInfo);
+        localtime_r(&modificationTime, &modificationTimeInfo);
+        /* Date format : <YYYY-MM-DDTHHMMSS+HHMM */
+        strftime(creationTimeStr, DATE_SIZE, DATE_FORMAT, &creationTimeInfo);
+        strftime(modificationTimeStr, DATE_SIZE, DATE_FORMAT, &modificationTimeInfo);
+
+        printf("Media\n");
+        unsigned int hrs = (unsigned int)((info.duration + 500000) / 1000000 / 60 / 60);
+        unsigned int min = (unsigned int)((info.duration + 500000) / 1000000 / 60 - hrs * 60);
+        unsigned int sec = (unsigned int)((info.duration + 500000) / 1000000 - hrs * 60 * 60 - min * 60);
+        printf("  duration: %02d:%02d:%02d\n", hrs, min, sec);
+        printf("  creation time: %s\n", creationTimeStr);
+        printf("  modification time: %s\n", modificationTimeStr);
+        printf("\n");
+    }
+}
+
+
 static void mp4_demux_print_tracks(struct mp4_demux *demux)
 {
     mp4_track_info_t tk;
@@ -83,6 +120,18 @@ static void mp4_demux_print_tracks(struct mp4_demux *demux)
         ret = mp4_demux_get_track_info(demux, i, &tk);
         if (ret == 0)
         {
+            time_t creationTime = (time_t)tk.creation_time;
+            time_t modificationTime = (time_t)tk.modification_time;
+            struct tm creationTimeInfo;
+            struct tm modificationTimeInfo;
+            char creationTimeStr[DATE_SIZE + 1];
+            char modificationTimeStr[DATE_SIZE + 1];
+            localtime_r(&creationTime, &creationTimeInfo);
+            localtime_r(&modificationTime, &modificationTimeInfo);
+            /* Date format : <YYYY-MM-DDTHHMMSS+HHMM */
+            strftime(creationTimeStr, DATE_SIZE, DATE_FORMAT, &creationTimeInfo);
+            strftime(modificationTimeStr, DATE_SIZE, DATE_FORMAT, &modificationTimeInfo);
+
             printf("Track #%d ID=%d\n", i, tk.id);
             switch (tk.type)
             {
@@ -126,7 +175,9 @@ static void mp4_demux_print_tracks(struct mp4_demux *demux)
             unsigned int hrs = (unsigned int)((tk.duration + 500000) / 1000000 / 60 / 60);
             unsigned int min = (unsigned int)((tk.duration + 500000) / 1000000 / 60 - hrs * 60);
             unsigned int sec = (unsigned int)((tk.duration + 500000) / 1000000 - hrs * 60 * 60 - min * 60);
-            printf("  duration=%" PRIu64 " (%02d:%02d:%02d)\n", tk.duration, hrs, min, sec);
+            printf("  duration: %02d:%02d:%02d\n", hrs, min, sec);
+            printf("  creation time: %s\n", creationTimeStr);
+            printf("  modification time: %s\n", modificationTimeStr);
             printf("\n");
         }
     }
@@ -265,6 +316,7 @@ int main(int argc, char **argv)
     }
     else
     {
+        mp4_demux_print_info(demux);
         mp4_demux_print_tracks(demux);
         mp4_demux_print_metadata(demux);
         mp4_demux_print_chapters(demux);

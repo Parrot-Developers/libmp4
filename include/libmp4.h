@@ -94,9 +94,21 @@ typedef enum
 
 typedef struct
 {
+    uint64_t duration;
+    uint64_t creation_time;
+    uint64_t modification_time;
+    uint32_t track_count;
+
+} mp4_media_info_t;
+
+
+typedef struct
+{
     uint32_t id;
     mp4_track_type_t type;
     uint64_t duration;
+    uint64_t creation_time;
+    uint64_t modification_time;
     uint32_t sample_count;
     mp4_video_codec_t video_codec;
     uint32_t video_width;
@@ -137,6 +149,11 @@ int mp4_demux_seek
         (struct mp4_demux *demux,
          uint64_t time_offset,
          int sync);
+
+
+int mp4_demux_get_media_info
+        (struct mp4_demux *demux,
+         mp4_media_info_t *media_info);
 
 
 int mp4_demux_get_track_count
