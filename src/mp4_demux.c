@@ -112,15 +112,6 @@
 #define MP4_METADATA_TAG_TYPE_ENCODER       0x00746f6f // ".too"
 #define MP4_METADATA_TAG_TYPE_COVER         0x636f7672 // "covr"
 
-#define MP4_METADATA_KEY_ARTIST             "com.apple.quicktime.artist"
-#define MP4_METADATA_KEY_TITLE              "com.apple.quicktime.title"
-#define MP4_METADATA_KEY_DATE               "com.apple.quicktime.creationdate"
-#define MP4_METADATA_KEY_LOCATION           "com.apple.quicktime.location.ISO6709"
-#define MP4_METADATA_KEY_COMMENT            "com.apple.quicktime.comment"
-#define MP4_METADATA_KEY_COPYRIGHT          "com.apple.quicktime.copyright"
-#define MP4_METADATA_KEY_MAKER              "com.apple.quicktime.make"
-#define MP4_METADATA_KEY_MODEL              "com.apple.quicktime.model"
-#define MP4_METADATA_KEY_VERSION            "com.apple.quicktime.software"
 #define MP4_METADATA_KEY_COVER              "com.apple.quicktime.artwork"
 
 #define MP4_MAC_TO_UNIX_EPOCH_OFFSET (0x7c25b080UL)
