@@ -199,7 +199,7 @@ static void mp4_demux_print_metadata(struct mp4_demux *demux)
         {
             if ((keys[i]) && (values[i]))
             {
-                printf("    %s: %s\n", keys[i], values[i]);
+                printf("  %s: %s\n", keys[i], values[i]);
             }
         }
         printf("\n");
@@ -247,8 +247,11 @@ static void mp4_demux_print_chapters(struct mp4_demux *demux)
         unsigned int i;
         for (i = 0; i < chaptersCount; i++)
         {
-            printf("    Chapter #%d time=%" PRIu64 " '%s'\n",
-                   i + 1, chaptersTime[i], chaptersName[i]);
+            unsigned int hrs = (unsigned int)((chaptersTime[i] + 500000) / 1000000 / 60 / 60);
+            unsigned int min = (unsigned int)((chaptersTime[i] + 500000) / 1000000 / 60 - hrs * 60);
+            unsigned int sec = (unsigned int)((chaptersTime[i] + 500000) / 1000000 - hrs * 60 * 60 - min * 60);
+            printf("  chapter #%d time=%02d:%02d:%02d '%s'\n",
+                   i + 1, hrs, min, sec, chaptersName[i]);
         }
         printf("\n");
     }
@@ -301,6 +304,8 @@ int main(int argc, char **argv)
 {
     int ret = 0;
     struct mp4_demux *demux;
+    struct timespec t1;
+    uint64_t startTime, endTime;
 
     if (argc < 2)
     {
@@ -308,7 +313,11 @@ int main(int argc, char **argv)
         exit(-1);
     }
 
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    startTime = (uint64_t)t1.tv_sec * 1000000 + (uint64_t)t1.tv_nsec / 1000;
     demux = mp4_demux_open(argv[1]);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    endTime = (uint64_t)t1.tv_sec * 1000000 + (uint64_t)t1.tv_nsec / 1000;
     if (demux == NULL)
     {
         fprintf(stderr, "mp4_demux_open() failed\n");
@@ -316,6 +325,8 @@ int main(int argc, char **argv)
     }
     else
     {
+        printf("File '%s'\n", argv[1]);
+        printf("Processing time: %.2fms\n\n", (float)(endTime - startTime) / 1000.);
         mp4_demux_print_info(demux);
         mp4_demux_print_tracks(demux);
         mp4_demux_print_metadata(demux);
