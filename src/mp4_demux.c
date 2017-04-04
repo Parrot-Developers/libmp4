@@ -170,7 +170,7 @@ typedef struct mp4_track_s
     uint32_t sampleCount;
     uint32_t *sampleSize;
     uint64_t *sampleDecodingTime;
-    uint32_t *sampleToChunk;
+    uint64_t *sampleOffset;
     uint32_t chunkCount;
     uint64_t *chunkOffset;
     uint32_t timeToSampleEntryCount;
@@ -2366,6 +2366,7 @@ static int mp4_demux_build_tracks(mp4_demux_t *demux)
         unsigned int i, j, k, n;
         uint32_t lastFirstChunk = 1, lastSamplesPerChunk = 0;
         uint32_t chunkCount, sampleCount = 0, chunkIdx;
+        uint64_t offsetInChunk;
         for (i = 0; i < tk->sampleToChunkEntryCount; i++)
         {
             chunkCount = tk->sampleToChunkEntries[i].firstChunk - lastFirstChunk;
@@ -2382,8 +2383,8 @@ static int mp4_demux_build_tracks(mp4_demux_t *demux)
             return -1;
         }
 
-        tk->sampleToChunk = malloc(sampleCount * sizeof(uint32_t));
-        MP4_RETURN_ERR_IF_FAILED((tk->sampleToChunk != NULL), -ENOMEM);
+        tk->sampleOffset = malloc(sampleCount * sizeof(uint64_t));
+        MP4_RETURN_ERR_IF_FAILED((tk->sampleOffset != NULL), -ENOMEM);
 
         lastFirstChunk = 1;
         lastSamplesPerChunk = 0;
@@ -2392,9 +2393,10 @@ static int mp4_demux_build_tracks(mp4_demux_t *demux)
             chunkCount = tk->sampleToChunkEntries[i].firstChunk - lastFirstChunk;
             for (j = 0; j < chunkCount; j++, chunkIdx++)
             {
-                for (k = 0; k < tk->sampleToChunkEntries[i].samplesPerChunk; k++, n++)
+                for (k = 0, offsetInChunk = 0; k < lastSamplesPerChunk; k++, n++)
                 {
-                    tk->sampleToChunk[n] = chunkIdx;
+                    tk->sampleOffset[n] = tk->chunkOffset[chunkIdx] + offsetInChunk;
+                    offsetInChunk += tk->sampleSize[n];
                 }
             }
             lastFirstChunk = tk->sampleToChunkEntries[i].firstChunk;
@@ -2403,9 +2405,10 @@ static int mp4_demux_build_tracks(mp4_demux_t *demux)
         chunkCount = tk->chunkCount - lastFirstChunk + 1;
         for (j = 0; j < chunkCount; j++, chunkIdx++)
         {
-            for (k = 0; k < lastSamplesPerChunk; k++, n++)
+            for (k = 0, offsetInChunk = 0; k < lastSamplesPerChunk; k++, n++)
             {
-                tk->sampleToChunk[n] = chunkIdx;
+                tk->sampleOffset[n] = tk->chunkOffset[chunkIdx] + offsetInChunk;
+                offsetInChunk += tk->sampleSize[n];
             }
         }
 
@@ -2508,7 +2511,7 @@ static int mp4_demux_build_tracks(mp4_demux_t *demux)
             unsigned int sampleSize, readBytes = 0;
             uint16_t sz;
             sampleSize = chapTk->sampleSize[i];
-            fseeko(demux->file, chapTk->chunkOffset[chapTk->sampleToChunk[i]], SEEK_SET);
+            fseeko(demux->file, chapTk->sampleOffset[i], SEEK_SET);
             MP4_READ_16(demux->file, sz, readBytes);
             sz = ntohs(sz);
             if (sz <= sampleSize - readBytes)
@@ -2668,7 +2671,7 @@ static void mp4_demux_free_tracks(mp4_demux_t *demux)
         free(tk->sampleSize);
         free(tk->chunkOffset);
         free(tk->sampleToChunkEntries);
-        free(tk->sampleToChunk);
+        free(tk->sampleOffset);
         free(tk->videoSps);
         free(tk->videoPps);
         free(tk->metadataContentEncoding);
@@ -3055,7 +3058,7 @@ int mp4_demux_get_track_next_sample(mp4_demux_t *demux,
         track_sample->sample_size = tk->sampleSize[tk->currentSample];
         if ((sample_buffer) && (tk->sampleSize[tk->currentSample] <= sample_buffer_size))
         {
-            fseeko(demux->file, tk->chunkOffset[tk->sampleToChunk[tk->currentSample]], SEEK_SET);
+            fseeko(demux->file, tk->sampleOffset[tk->currentSample], SEEK_SET);
             size_t count = fread(sample_buffer, tk->sampleSize[tk->currentSample], 1, demux->file);
             MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
                     "failed to read %d bytes from file", tk->sampleSize[tk->currentSample]);
@@ -3071,7 +3074,7 @@ int mp4_demux_get_track_next_sample(mp4_demux_t *demux,
             track_sample->metadata_size = tk->metadata->sampleSize[tk->currentSample];
             if ((metadata_buffer) && (tk->metadata->sampleSize[tk->currentSample] <= metadata_buffer_size))
             {
-                fseeko(demux->file, tk->metadata->chunkOffset[tk->metadata->sampleToChunk[tk->currentSample]], SEEK_SET);
+                fseeko(demux->file, tk->metadata->sampleOffset[tk->currentSample], SEEK_SET);
                 size_t count = fread(metadata_buffer, tk->metadata->sampleSize[tk->currentSample], 1, demux->file);
                 MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -1,
                         "failed to read %d bytes from file", tk->metadata->sampleSize[tk->currentSample]);
