@@ -15,6 +15,10 @@ LOCAL_SRC_FILES := \
 LOCAL_EXPORT_C_INCLUDES := $(LOCAL_PATH)/include
 LOCAL_CONDITIONAL_LIBRARIES := OPTIONAL:libulog
 
+ifeq ("$(TARGET_OS)","windows")
+  LOCAL_LDLIBS += -lws2_32
+endif
+
 include $(BUILD_LIBRARY)
 
 #####################

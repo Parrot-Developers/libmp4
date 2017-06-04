@@ -45,7 +45,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <arpa/inet.h>
+
+#ifdef _WIN32
+#  include <winsock2.h>
+#else /* !_WIN32 */
+#  include <arpa/inet.h>
+#endif /* !_WIN32 */
 
 #include <libmp4.h>
 
