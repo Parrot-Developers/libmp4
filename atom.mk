@@ -14,7 +14,6 @@ LOCAL_SRC_FILES := \
     src/mp4_log.c
 LOCAL_EXPORT_C_INCLUDES := $(LOCAL_PATH)/include
 LOCAL_CONDITIONAL_LIBRARIES := OPTIONAL:libulog
-LOCAL_CFLAGS := -Wextra
 
 include $(BUILD_LIBRARY)
 
@@ -28,5 +27,4 @@ LOCAL_DESCRIPTION := MP4 file library demuxer test program
 LOCAL_CATEGORY_PATH := multimedia
 LOCAL_SRC_FILES := test/mp4_demux_test.c
 LOCAL_LIBRARIES := libmp4 libulog
-LOCAL_CFLAGS := -Wextra
 include $(BUILD_EXECUTABLE)
