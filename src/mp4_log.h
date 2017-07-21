@@ -13,12 +13,12 @@
  *
  *   * Redistributions of source code must retain the above copyright
  *     notice, this list of conditions and the following disclaimer.
- * 
+ *
  *   * Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in
  *     the documentation and/or other materials provided with the
  *     distribution.
- * 
+ *
  *   * Neither the name of the copyright holder nor the names of the
  *     contributors may be used to endorse or promote products derived
  *     from this software without specific prior written permission.
@@ -101,7 +101,7 @@ extern "C" {
 	do { \
 		if (!(_cond)) { \
 			MP4_LOGE("%s:%d: err=%d(%s)", __func__, __LINE__, \
-					(_err), strerror(-(_err))); \
+				(_err), strerror(-(_err))); \
 			/* codecheck_ignore[RETURN_PARENTHESES] */ \
 			return (_val); \
 		} \
@@ -111,8 +111,9 @@ extern "C" {
 #define MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(_cond, _err, _fmt, ...) \
 	do { \
 		if (!(_cond)) { \
-			MP4_LOGE("%s:%d: err=%d(%s) " _fmt, __func__, __LINE__, \
-					(_err), strerror(-(_err)), ##__VA_ARGS__); \
+			MP4_LOGE("%s:%d: err=%d(%s) " _fmt, \
+				__func__, __LINE__, \
+				(_err), strerror(-(_err)), ##__VA_ARGS__); \
 			/* codecheck_ignore[RETURN_PARENTHESES] */ \
 			return (_err); \
 		} \
@@ -122,8 +123,9 @@ extern "C" {
 #define MP4_LOG_ERR_AND_RETURN_VAL_IF_FAILED(_cond, _err, _val, _fmt, ...) \
 	do { \
 		if (!(_cond)) { \
-			MP4_LOGE("%s:%d: err=%d(%s) " _fmt, __func__, __LINE__, \
-					(_err), strerror(-(_err)), ##__VA_ARGS__); \
+			MP4_LOGE("%s:%d: err=%d(%s) " _fmt, \
+				__func__, __LINE__, \
+				(_err), strerror(-(_err)), ##__VA_ARGS__); \
 			/* codecheck_ignore[RETURN_PARENTHESES] */ \
 			return (_val); \
 		} \
