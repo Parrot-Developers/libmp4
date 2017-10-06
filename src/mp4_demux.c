@@ -165,6 +165,7 @@ struct mp4_track {
 	uint64_t creationTime;
 	uint64_t modificationTime;
 	uint32_t currentSample;
+	uint64_t pendingSeekTime;
 	uint32_t sampleCount;
 	uint32_t *sampleSize;
 	uint64_t *sampleDecodingTime;
@@ -3051,6 +3052,7 @@ int mp4_demux_seek(
 
 		int found = 0, i;
 		uint64_t ts = (time_offset * tk->timescale + 500000) / 1000000;
+		uint64_t newPendingSeekTime = 0;
 		int start = (unsigned int)(((uint64_t)tk->sampleCount * ts
 				+ tk->duration - 1) / tk->duration);
 		if (start < 0)
@@ -3072,12 +3074,15 @@ int mp4_demux_seek(
 				} else if (prevSync >= 0) {
 					start = prevSync;
 					found = 1;
+					newPendingSeekTime =
+						tk->sampleDecodingTime[i];
 					break;
 				}
 			}
 		}
 		if (found) {
 			tk->currentSample = start;
+			tk->pendingSeekTime = newPendingSeekTime;
 			MP4_LOGI("seek to %" PRIu64
 				" -> sample #%d time %" PRIu64,
 				time_offset, start,
@@ -3313,6 +3318,12 @@ int mp4_demux_get_track_next_sample(
 					metatk->sampleSize[tk->currentSample]);
 			}
 		}
+		track_sample->silent = ((tk->pendingSeekTime) &&
+			(tk->sampleDecodingTime[tk->currentSample] <
+				tk->pendingSeekTime)) ? 1 : 0;
+		if (tk->sampleDecodingTime[tk->currentSample] >=
+			tk->pendingSeekTime)
+			tk->pendingSeekTime = 0;
 		track_sample->sample_dts =
 			(tk->sampleDecodingTime[tk->currentSample] * 1000000 +
 			tk->timescale / 2) / tk->timescale;

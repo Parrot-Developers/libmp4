@@ -115,6 +115,7 @@ struct mp4_track_info {
 struct mp4_track_sample {
 	uint32_t sample_size;
 	uint32_t metadata_size;
+	int silent;
 	uint64_t sample_dts;
 	uint64_t next_sample_dts;
 };
