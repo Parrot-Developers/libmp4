@@ -3057,7 +3057,7 @@ int mp4_demux_seek(
 			start = 0;
 		if ((unsigned)start >= tk->sampleCount)
 			start = tk->sampleCount - 1;
-		while (((unsigned)start < tk->sampleCount)
+		while (((unsigned)start < tk->sampleCount - 1)
 				&& (tk->sampleDecodingTime[start] < ts))
 			start++;
 		for (i = start; i >= 0; i--) {
