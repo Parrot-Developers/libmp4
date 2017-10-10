@@ -36,8 +36,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef ANDROID
 #ifndef _FILE_OFFSET_BITS
 #define _FILE_OFFSET_BITS 64
+#endif
 #endif
 
 #include <stdint.h>
@@ -278,8 +280,9 @@ struct mp4_demux {
 				_maxBytes - _readBytes, SEEK_CUR); \
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED( \
 				_ret == 0, -errno, \
-				"failed to seek %ld bytes forward in file", \
-				_maxBytes - _readBytes); \
+				"failed to seek %" PRIi64 \
+				" bytes forward in file", \
+				(int64_t)_maxBytes - _readBytes); \
 			_readBytes = _maxBytes; \
 		} \
 	} while (0)
@@ -330,7 +333,8 @@ static off_t mp4_demux_parse_ftyp(
 	uint32_t val32;
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 8), -EINVAL,
-		"invalid size: %ld expected %d min", maxBytes, 8);
+		"invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 8);
 
 	/* major_brand */
 	MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -375,7 +379,8 @@ static off_t mp4_demux_parse_mvhd(
 	uint32_t val32;
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 25 * 4), -EINVAL,
-		"invalid size: %ld expected %d min", maxBytes, 25 * 4);
+		"invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 25 * 4);
 
 	/* version & flags */
 	MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -387,8 +392,8 @@ static off_t mp4_demux_parse_mvhd(
 
 	if (version == 1) {
 		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 28 * 4),
-			-EINVAL, "invalid size: %ld expected %d min",
-			maxBytes, 28 * 4);
+			-EINVAL, "invalid size: %" PRIi64 " expected %d min",
+			(int64_t)maxBytes, 28 * 4);
 
 		/* creation_time */
 		MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -511,7 +516,8 @@ static off_t mp4_demux_parse_tkhd(
 		"invalid track");
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 21 * 4), -EINVAL,
-		"invalid size: %ld expected %d min", maxBytes, 21 * 4);
+		"invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 21 * 4);
 
 	/* version & flags */
 	MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -523,8 +529,8 @@ static off_t mp4_demux_parse_tkhd(
 
 	if (version == 1) {
 		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 24 * 4),
-			-EINVAL, "invalid size: %ld expected %d min",
-			maxBytes, 24 * 4);
+			-EINVAL, "invalid size: %" PRIi64 " expected %d min",
+			(int64_t)maxBytes, 24 * 4);
 
 		/* creation_time */
 		MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -654,7 +660,8 @@ static off_t mp4_demux_parse_tref(
 		"invalid track");
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 3 * 4), -EINVAL,
-		"invalid size: %ld expected %d min", maxBytes, 3 * 4);
+		"invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 3 * 4);
 
 	/* reference type size */
 	MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -696,7 +703,8 @@ static off_t mp4_demux_parse_mdhd(
 		"invalid track");
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 6 * 4), -EINVAL,
-		"invalid size: %ld expected %d min", maxBytes, 6 * 4);
+		"invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 6 * 4);
 
 	/* version & flags */
 	MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -708,8 +716,8 @@ static off_t mp4_demux_parse_mdhd(
 
 	if (version == 1) {
 		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 9 * 4),
-			-EINVAL, "invalid size: %ld expected %d min",
-			maxBytes, 9 * 4);
+			-EINVAL, "invalid size: %" PRIi64 " expected %d min",
+			(int64_t)maxBytes, 9 * 4);
 
 		/* creation_time */
 		MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -806,7 +814,8 @@ static off_t mp4_demux_parse_vmhd(
 	uint16_t val16;
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 3 * 4), -EINVAL,
-		"invalid size: %ld expected %d min", maxBytes, 3 * 4);
+		"invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 3 * 4);
 
 	/* version & flags */
 	MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -849,7 +858,8 @@ static off_t mp4_demux_parse_smhd(
 	uint32_t val32;
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 2 * 4), -EINVAL,
-			"invalid size: %ld expected %d min", maxBytes, 2 * 4);
+			"invalid size: %" PRIi64 " expected %d min",
+			(int64_t)maxBytes, 2 * 4);
 
 	/* version & flags */
 	MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -882,7 +892,8 @@ static off_t mp4_demux_parse_hmhd(
 	uint32_t val32;
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 5 * 4), -EINVAL,
-		"invalid size: %ld expected %d min", maxBytes, 5 * 4);
+		"invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 5 * 4);
 
 	/* version & flags */
 	MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -929,7 +940,8 @@ static off_t mp4_demux_parse_nmhd(
 	uint32_t val32;
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 4), -EINVAL,
-		"invalid size: %ld expected %d min", maxBytes, 4);
+		"invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 4);
 
 	/* version & flags */
 	MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -956,7 +968,8 @@ static off_t mp4_demux_parse_hdlr(
 	uint32_t val32;
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 6 * 4), -EINVAL,
-		"invalid size: %ld expected %d min", maxBytes, 6 * 4);
+		"invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 6 * 4);
 
 	/* version & flags */
 	MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -1036,7 +1049,8 @@ static off_t mp4_demux_parse_avcc(
 		"invalid track");
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= minBytes), -EINVAL,
-		"invalid size: %ld expected %ld min", maxBytes, minBytes);
+		"invalid size: %" PRIi64 " expected %" PRIi64 " min",
+		(int64_t)maxBytes, (int64_t)minBytes);
 
 	/* version & profile & level */
 	MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -1060,7 +1074,8 @@ static off_t mp4_demux_parse_avcc(
 
 	minBytes += 2 * spsCount;
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= minBytes), -EINVAL,
-		"invalid size: %ld expected %ld min", maxBytes, minBytes);
+		"invalid size: %" PRIi64 " expected %" PRIi64 " min",
+		(int64_t)maxBytes, (int64_t)minBytes);
 
 	int i;
 	for (i = 0; i < spsCount; i++) {
@@ -1071,8 +1086,8 @@ static off_t mp4_demux_parse_avcc(
 
 		minBytes += spsLength;
 		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= minBytes),
-			-EINVAL, "invalid size: %ld expected %ld min",
-			maxBytes, minBytes);
+			-EINVAL, "invalid size: %" PRIi64 " expected %"
+			PRIi64 " min", (int64_t)maxBytes, (int64_t)minBytes);
 
 		if ((!track->videoSps) && (spsLength)) {
 			/* first SPS found */
@@ -1096,7 +1111,8 @@ static off_t mp4_demux_parse_avcc(
 
 	minBytes++;
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= minBytes), -EINVAL,
-		"invalid size: %ld expected %ld min", maxBytes, minBytes);
+		"invalid size: %" PRIi64 " expected %" PRIi64 " min",
+		(int64_t)maxBytes, (int64_t)minBytes);
 
 	/* pps_count */
 	uint8_t ppsCount;
@@ -1105,7 +1121,8 @@ static off_t mp4_demux_parse_avcc(
 
 	minBytes += 2 * ppsCount;
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= minBytes), -EINVAL,
-		"invalid size: %ld expected %ld min", maxBytes, minBytes);
+		"invalid size: %" PRIi64 " expected %" PRIi64 " min",
+		(int64_t)maxBytes, (int64_t)minBytes);
 
 	for (i = 0; i < ppsCount; i++) {
 		/* pps_length */
@@ -1115,8 +1132,8 @@ static off_t mp4_demux_parse_avcc(
 
 		minBytes += ppsLength;
 		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= minBytes),
-			-EINVAL, "invalid size: %ld expected %ld min",
-			maxBytes, minBytes);
+			-EINVAL, "invalid size: %" PRIi64 " expected %"
+			PRIi64 " min", (int64_t)maxBytes, (int64_t)minBytes);
 
 		if ((!track->videoPps) && (ppsLength)) {
 			/* first PPS found */
@@ -1159,7 +1176,8 @@ static off_t mp4_demux_parse_stsd(
 		"invalid track");
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 8), -EINVAL,
-		"invalid size: %ld expected %d min", maxBytes, 8);
+		"invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 8);
 
 	/* version & flags */
 	MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -1182,8 +1200,8 @@ static off_t mp4_demux_parse_stsd(
 			MP4_LOGD("# stsd: video handler type");
 
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 102),
-				-EINVAL, "invalid size: %ld expected %d min",
-				maxBytes, 102);
+				-EINVAL, "invalid size: %" PRIi64
+				" expected %d min", (int64_t)maxBytes, 102);
 
 			/* size */
 			MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -1219,8 +1237,8 @@ static off_t mp4_demux_parse_stsd(
 			MP4_READ_32(demux->file, val32, boxReadBytes);
 			track->videoWidth = ((ntohl(val32) >> 16) & 0xFFFF);
 			track->videoHeight = (ntohl(val32) & 0xFFFF);
-			MP4_LOGD("# stsd: width=%" PRIu16, track->videoWidth);
-			MP4_LOGD("# stsd: height=%" PRIu16, track->videoHeight);
+			MP4_LOGD("# stsd: width=%" PRIu32, track->videoWidth);
+			MP4_LOGD("# stsd: height=%" PRIu32, track->videoHeight);
 
 			/* horizresolution */
 			MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -1278,7 +1296,7 @@ static off_t mp4_demux_parse_stsd(
 					demux, maxBytes - boxReadBytes, track);
 				if (ret < 0) {
 					MP4_LOGE("mp4_demux_parse_avcc() failed"
-						" (%ld)", ret);
+						" (%" PRIi64 ")", (int64_t)ret);
 					return ret;
 				}
 				boxReadBytes += ret;
@@ -1290,8 +1308,8 @@ static off_t mp4_demux_parse_stsd(
 			MP4_LOGD("# stsd: audio handler type");
 
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 44),
-				-EINVAL, "invalid size: %ld expected %d min",
-				maxBytes, 44);
+				-EINVAL, "invalid size: %" PRIi64
+				" expected %d min", (int64_t)maxBytes, 44);
 
 			/* size */
 			MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -1326,9 +1344,9 @@ static off_t mp4_demux_parse_stsd(
 			track->audioChannelCount =
 				((ntohl(val32) >> 16) & 0xFFFF);
 			track->audioSampleSize = (ntohl(val32) & 0xFFFF);
-			MP4_LOGD("# stsd: channelcount=%" PRIu16,
+			MP4_LOGD("# stsd: channelcount=%" PRIu32,
 				track->audioChannelCount);
-			MP4_LOGD("# stsd: samplesize=%" PRIu16,
+			MP4_LOGD("# stsd: samplesize=%" PRIu32,
 				track->audioSampleSize);
 
 			/* reserved */
@@ -1349,8 +1367,8 @@ static off_t mp4_demux_parse_stsd(
 			MP4_LOGD("# stsd: metadata handler type");
 
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 24),
-				-EINVAL, "invalid size: %ld expected %d min",
-				maxBytes, 24);
+				-EINVAL, "invalid size: %" PRIi64
+				" expected %d min", (int64_t)maxBytes, 24);
 
 			/* size */
 			MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -1434,7 +1452,8 @@ static off_t mp4_demux_parse_stts(
 		"time to sample table already defined");
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 8), -EINVAL,
-		"invalid size: %ld expected %d min", maxBytes, 8);
+		"invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 8);
 
 	/* version & flags */
 	MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -1454,9 +1473,9 @@ static off_t mp4_demux_parse_stts(
 	MP4_RETURN_ERR_IF_FAILED((track->timeToSampleEntries != NULL), -ENOMEM);
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
-		(maxBytes >= 8 + track->timeToSampleEntryCount * 8), -EINVAL,
-		"invalid size: %ld expected %d min",
-		maxBytes, 8 + track->timeToSampleEntryCount * 8);
+		(maxBytes >= (signed)(8 + track->timeToSampleEntryCount * 8)),
+		-EINVAL, "invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 8 + track->timeToSampleEntryCount * 8);
 
 	unsigned int i;
 	for (i = 0; i < track->timeToSampleEntryCount; i++) {
@@ -1497,7 +1516,8 @@ static off_t mp4_demux_parse_stss(
 		"sync sample table already defined");
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 8), -EINVAL,
-		"invalid size: %ld expected %d min", maxBytes, 8);
+		"invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 8);
 
 	/* version & flags */
 	MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -1517,9 +1537,9 @@ static off_t mp4_demux_parse_stss(
 	MP4_RETURN_ERR_IF_FAILED((track->syncSampleEntries != NULL), -ENOMEM);
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
-		(maxBytes >= 8 + track->syncSampleEntryCount * 4), -EINVAL,
-		"invalid size: %ld expected %d min",
-		maxBytes, 8 + track->syncSampleEntryCount * 4);
+		(maxBytes >= (signed)(8 + track->syncSampleEntryCount * 4)),
+		-EINVAL, "invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 8 + track->syncSampleEntryCount * 4);
 
 	unsigned int i;
 	for (i = 0; i < track->syncSampleEntryCount; i++) {
@@ -1553,7 +1573,8 @@ static off_t mp4_demux_parse_stsz(
 		-EEXIST, "sample size table already defined");
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 12), -EINVAL,
-		"invalid size: %ld expected %d min", maxBytes, 12);
+		"invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 12);
 
 	/* version & flags */
 	MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -1578,9 +1599,9 @@ static off_t mp4_demux_parse_stsz(
 
 	if (sampleSize == 0) {
 		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
-			(maxBytes >= 12 + track->sampleCount * 4), -EINVAL,
-			"invalid size: %ld expected %d min",
-			maxBytes, 12 + track->sampleCount * 4);
+			(maxBytes >= (signed)(12 + track->sampleCount * 4)),
+			-EINVAL, "invalid size: %" PRIi64 " expected %d min",
+			(int64_t)maxBytes, 12 + track->sampleCount * 4);
 
 		unsigned int i;
 		for (i = 0; i < track->sampleCount; i++) {
@@ -1620,7 +1641,8 @@ static off_t mp4_demux_parse_stsc(
 		"sample to chunk table already defined");
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 8), -EINVAL,
-		"invalid size: %ld expected %d min", maxBytes, 8);
+		"invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 8);
 
 	/* version & flags */
 	MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -1643,9 +1665,9 @@ static off_t mp4_demux_parse_stsc(
 		-ENOMEM);
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
-		(maxBytes >= 8 + track->sampleToChunkEntryCount * 12), -EINVAL,
-		"invalid size: %ld expected %d min",
-		maxBytes, 8 + track->sampleToChunkEntryCount * 12);
+		(maxBytes >= (signed)(8 + track->sampleToChunkEntryCount * 12)),
+		-EINVAL, "invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 8 + track->sampleToChunkEntryCount * 12);
 
 	unsigned int i;
 	for (i = 0; i < track->sampleToChunkEntryCount; i++) {
@@ -1693,7 +1715,8 @@ static off_t mp4_demux_parse_stco(
 		-EEXIST, "chunk offset table already defined");
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 8), -EINVAL,
-		"invalid size: %ld expected %d min", maxBytes, 8);
+		"invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 8);
 
 	/* version & flags */
 	MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -1712,9 +1735,9 @@ static off_t mp4_demux_parse_stco(
 	MP4_RETURN_ERR_IF_FAILED((track->chunkOffset != NULL), -ENOMEM);
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
-		(maxBytes >= 8 + track->chunkCount * 4), -EINVAL,
-		"invalid size: %ld expected %d min",
-		maxBytes, 8 + track->chunkCount * 4);
+		(maxBytes >= (signed)(8 + track->chunkCount * 4)),
+		-EINVAL, "invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 8 + track->chunkCount * 4);
 
 	unsigned int i;
 	for (i = 0; i < track->chunkCount; i++) {
@@ -1748,7 +1771,8 @@ static off_t mp4_demux_parse_co64(
 		-EEXIST, "chunk offset table already defined");
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 8), -EINVAL,
-		"invalid size: %ld expected %d min", maxBytes, 8);
+		"invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 8);
 
 	/* version & flags */
 	MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -1767,9 +1791,9 @@ static off_t mp4_demux_parse_co64(
 	MP4_RETURN_ERR_IF_FAILED((track->chunkOffset != NULL), -ENOMEM);
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
-		(maxBytes >= 8 + track->chunkCount * 8), -EINVAL,
-		"invalid size: %ld expected %d min",
-		maxBytes, 8 + track->chunkCount * 8);
+		(maxBytes >= (signed)(8 + track->chunkCount * 8)),
+		-EINVAL, "invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 8 + track->chunkCount * 8);
 
 	unsigned int i;
 	for (i = 0; i < track->chunkCount; i++) {
@@ -1802,7 +1826,8 @@ static off_t mp4_demux_parse_xyz(
 		"invalid parent");
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 4), -EINVAL,
-		"invalid size: %ld expected %d min", maxBytes, 4);
+		"invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 4);
 
 	/* location_size */
 	MP4_READ_16(demux->file, val16, boxReadBytes);
@@ -1815,8 +1840,8 @@ static off_t mp4_demux_parse_xyz(
 	MP4_LOGD("# xyz: language_code=%d", languageCode);
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 4 + locationSize),
-		-EINVAL, "invalid size: %ld expected %d min",
-		maxBytes, 4 + locationSize);
+		-EINVAL, "invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 4 + locationSize);
 
 	demux->udtaLocationKey = malloc(5);
 	MP4_RETURN_ERR_IF_FAILED((demux->udtaLocationKey != NULL), -ENOMEM);
@@ -1855,7 +1880,8 @@ static int mp4_demux_count_ilst_sub_box(
 	int lastBox = 0, count = 0;
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 8), -EINVAL,
-		"invalid size: %ld expected %d min", maxBytes, 8);
+		"invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 8);
 
 	originalOffset = ftello(demux->file);
 
@@ -1878,8 +1904,9 @@ static int mp4_demux_count_ilst_sub_box(
 		} else if (size == 1) {
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
 				(maxBytes >= boxReadBytes + 16), -EINVAL,
-				"invalid size: %ld expected %ld min",
-				maxBytes, boxReadBytes + 16);
+				"invalid size: %" PRIi64 " expected %"
+				PRIi64 " min", (int64_t)maxBytes,
+				(int64_t)boxReadBytes + 16);
 
 			/* large size */
 			MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -1898,7 +1925,8 @@ static int mp4_demux_count_ilst_sub_box(
 
 	int ret = fseeko(demux->file, -totalReadBytes, SEEK_CUR);
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(ret == 0, -errno,
-		"failed to seek %ld bytes forward in file", -totalReadBytes);
+		"failed to seek %" PRIi64 " bytes forward in file",
+		(int64_t)-totalReadBytes);
 
 	return count;
 }
@@ -1914,7 +1942,8 @@ static off_t mp4_demux_parse_meta_keys(
 	uint32_t val32, i;
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 8), -EINVAL,
-		"invalid size: %ld expected %d min", maxBytes, 8);
+		"invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 8);
 
 	/* version & flags */
 	MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -1930,9 +1959,9 @@ static off_t mp4_demux_parse_meta_keys(
 	MP4_LOGD("# keys: entry_count=%" PRIu32, demux->metaMetadataCount);
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
-		(maxBytes >= 4 + demux->metaMetadataCount * 8), -EINVAL,
-		"invalid size: %ld expected %d min",
-		maxBytes, 4 + demux->metaMetadataCount * 8);
+		(maxBytes >= (signed)(4 + demux->metaMetadataCount * 8)),
+		-EINVAL, "invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 4 + demux->metaMetadataCount * 8);
 
 	demux->metaMetadataKey = calloc(
 		demux->metaMetadataCount, sizeof(char *));
@@ -1963,9 +1992,9 @@ static off_t mp4_demux_parse_meta_keys(
 			(char)(keyNamespace & 0xFF));
 
 		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
-			(maxBytes - boxReadBytes >= keySize), -EINVAL,
-			"invalid size: %ld expected %d min",
-			maxBytes - boxReadBytes, keySize);
+			(maxBytes - boxReadBytes >= (signed)keySize),
+			-EINVAL, "invalid size: %" PRIi64 " expected %d min",
+			(int64_t)maxBytes - boxReadBytes, keySize);
 
 		demux->metaMetadataKey[i] = malloc(keySize + 1);
 		MP4_RETURN_ERR_IF_FAILED((demux->metaMetadataKey[i] != NULL),
@@ -2000,7 +2029,8 @@ static off_t mp4_demux_parse_meta_data(
 		"invalid parent");
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 9), -EINVAL,
-		"invalid size: %ld expected %d min", maxBytes, 9);
+		"invalid size: %" PRIi64 " expected %d min",
+		(int64_t)maxBytes, 9);
 
 	/* version & class */
 	MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -2104,8 +2134,7 @@ static off_t mp4_demux_parse_meta_data(
 					MP4_METADATA_COVER_TYPE_BMP;
 				break;
 			}
-			MP4_LOGD("# data: udta cover offset=0x%lX"
-				" size=%d type=%d", demux->udtaCoverOffset,
+			MP4_LOGD("# data: udta cover size=%d type=%d",
 				demux->udtaCoverSize, demux->udtaCoverType);
 		} else if ((type > 0) && (type <= demux->metaMetadataCount) &&
 			(!strcmp(demux->metaMetadataKey[type - 1],
@@ -2127,8 +2156,7 @@ static off_t mp4_demux_parse_meta_data(
 					MP4_METADATA_COVER_TYPE_BMP;
 				break;
 			}
-			MP4_LOGD("# data: meta cover offset=0x%lX"
-				" size=%d type=%d", demux->metaCoverOffset,
+			MP4_LOGD("# data: meta cover size=%d type=%d",
 				demux->metaCoverSize, demux->metaCoverType);
 		}
 	}
@@ -2166,11 +2194,13 @@ static off_t mp4_demux_parse_children(
 		box.type = ntohl(val32);
 		if ((parent) && (parent->box.type == MP4_ILST_BOX) &&
 			(box.type <= demux->metaMetadataCount))
-			MP4_LOGD("offset 0x%lX metadata box size %" PRIu32,
-				ftello(demux->file), box.size);
+			MP4_LOGD("offset 0x%" PRIx64
+				" metadata box size %" PRIu32,
+				(int64_t)ftello(demux->file), box.size);
 		else
-			MP4_LOGD("offset 0x%lX box '%c%c%c%c' size %" PRIu32,
-				ftello(demux->file),
+			MP4_LOGD("offset 0x%" PRIx64
+				" box '%c%c%c%c' size %" PRIu32,
+				(int64_t)ftello(demux->file),
 				(box.type >> 24) & 0xFF,
 				(box.type >> 16) & 0xFF,
 				(box.type >> 8) & 0xFF,
@@ -2183,8 +2213,9 @@ static off_t mp4_demux_parse_children(
 		} else if (box.size == 1) {
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
 				(maxBytes >= parentReadBytes + 16), -EINVAL,
-				"invalid size: %ld expected %ld min",
-				maxBytes, parentReadBytes + 16);
+				"invalid size: %" PRIi64 " expected %"
+				PRIi64 " min", (int64_t)maxBytes,
+				(int64_t)parentReadBytes + 16);
 
 			/* large size */
 			MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -2197,8 +2228,9 @@ static off_t mp4_demux_parse_children(
 
 		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
 			(maxBytes >= parentReadBytes + realBoxSize), -EINVAL,
-			"invalid size: %ld expected %ld min",
-			maxBytes, parentReadBytes + realBoxSize);
+			"invalid size: %" PRIi64 " expected %" PRIi64 " min",
+			(int64_t)maxBytes,
+			(int64_t)parentReadBytes + realBoxSize);
 
 		/* keep the box in the tree */
 		struct mp4_box_item *item = malloc(sizeof(*item));
@@ -2221,8 +2253,9 @@ static off_t mp4_demux_parse_children(
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
 				((unsigned)(realBoxSize - boxReadBytes) >=
 				sizeof(box.uuid)), -EINVAL,
-				"invalid size: %ld expected %zu min",
-				realBoxSize - boxReadBytes, sizeof(box.uuid));
+				"invalid size: %" PRIi64 " expected %zu min",
+				(int64_t)realBoxSize - boxReadBytes,
+				sizeof(box.uuid));
 
 			/* box extended type */
 			size_t count = fread(box.uuid, sizeof(box.uuid),
@@ -2406,9 +2439,9 @@ static off_t mp4_demux_parse_children(
 				(parent->box.type == MP4_USER_DATA_BOX)) {
 				MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
 					(realBoxSize - boxReadBytes >= 4),
-					-EINVAL,
-					"invalid size: %ld expected %d min",
-					realBoxSize - boxReadBytes, 4);
+					-EINVAL, "invalid size: %" PRIi64
+					" expected %d min",
+					(int64_t)realBoxSize - boxReadBytes, 4);
 
 				/* version & flags */
 				MP4_READ_32(demux->file, val32, boxReadBytes);
@@ -2517,16 +2550,18 @@ static off_t mp4_demux_parse_children(
 
 		/* skip the rest of the box */
 		if (realBoxSize < boxReadBytes) {
-			MP4_LOGE("invalid box size %ld (read bytes: %ld)",
-				realBoxSize, boxReadBytes);
+			MP4_LOGE("invalid box size %" PRIi64
+				" (read bytes: %" PRIi64 ")",
+				(int64_t)realBoxSize, (int64_t)boxReadBytes);
 			ret = -EIO;
 			break;
 		}
 		int _ret = fseeko(demux->file,
 			realBoxSize - boxReadBytes, SEEK_CUR);
 		if (_ret != 0) {
-			MP4_LOGE("failed to seek %ld bytes forward in file",
-				realBoxSize - boxReadBytes);
+			MP4_LOGE("failed to seek %" PRIi64
+				" bytes forward in file",
+				(int64_t)realBoxSize - boxReadBytes);
 			ret = -EIO;
 			break;
 		}
@@ -2928,7 +2963,8 @@ struct mp4_demux *mp4_demux_open(
 	retBytes = mp4_demux_parse_children(
 		demux, &demux->root, demux->fileSize, NULL);
 	if (retBytes < 0) {
-		MP4_LOGE("mp4_demux_parse_children() failed (%ld)", retBytes);
+		MP4_LOGE("mp4_demux_parse_children() failed (%" PRIi64 ")",
+			(int64_t)retBytes);
 		err = -EIO;
 		goto error;
 	} else {
@@ -3348,8 +3384,9 @@ int mp4_demux_get_metadata_cover(
 			int _ret = fseeko(demux->file,
 				demux->finalCoverOffset, SEEK_SET);
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(_ret == 0, -errno,
-				"failed to seek %zi bytes forward in file",
-				demux->finalCoverOffset);
+				"failed to seek %" PRIi64
+				" bytes forward in file",
+				(int64_t)demux->finalCoverOffset);
 			size_t count = fread(cover_buffer,
 				demux->finalCoverSize, 1, demux->file);
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -EIO,
