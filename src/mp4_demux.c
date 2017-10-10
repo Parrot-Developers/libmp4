@@ -164,7 +164,7 @@ struct mp4_track {
 	uint64_t duration;
 	uint64_t creationTime;
 	uint64_t modificationTime;
-	uint32_t currentSample;
+	uint32_t nextSample;
 	uint64_t pendingSeekTime;
 	uint32_t sampleCount;
 	uint32_t *sampleSize;
@@ -3081,7 +3081,7 @@ int mp4_demux_seek(
 			}
 		}
 		if (found) {
-			tk->currentSample = start;
+			tk->nextSample = start;
 			tk->pendingSeekTime = newPendingSeekTime;
 			MP4_LOGI("seek to %" PRIu64
 				" -> sample #%d time %" PRIu64,
@@ -3092,7 +3092,7 @@ int mp4_demux_seek(
 				((unsigned)start < tk->metadata->sampleCount) &&
 				(tk->sampleDecodingTime[start] ==
 				tk->metadata->sampleDecodingTime[start]))
-				tk->metadata->currentSample = start;
+				tk->metadata->nextSample = start;
 			else
 				MP4_LOGW("failed to sync metadata"
 					" with ref track");
@@ -3269,72 +3269,102 @@ int mp4_demux_get_track_next_sample(
 			"track not found");
 	}
 
-	if (tk->currentSample < tk->sampleCount) {
-		track_sample->sample_size = tk->sampleSize[tk->currentSample];
+	if (tk->nextSample < tk->sampleCount) {
+		track_sample->sample_size = tk->sampleSize[tk->nextSample];
 		if ((sample_buffer) &&
-			(tk->sampleSize[tk->currentSample] <=
+			(tk->sampleSize[tk->nextSample] <=
 			sample_buffer_size)) {
 			int _ret = fseeko(demux->file,
-				tk->sampleOffset[tk->currentSample], SEEK_SET);
+				tk->sampleOffset[tk->nextSample], SEEK_SET);
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(_ret == 0, -errno,
 				"failed to seek %" PRIu64
 				" bytes forward in file",
-				tk->sampleOffset[tk->currentSample]);
+				tk->sampleOffset[tk->nextSample]);
 			size_t count = fread(sample_buffer,
-				tk->sampleSize[tk->currentSample],
+				tk->sampleSize[tk->nextSample],
 				1, demux->file);
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -EIO,
 				"failed to read %d bytes from file",
-				tk->sampleSize[tk->currentSample]);
+				tk->sampleSize[tk->nextSample]);
 		} else if (sample_buffer) {
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(1, -ENOBUFS,
 				"buffer too small (%d bytes, %d needed)",
 				sample_buffer_size,
-				tk->sampleSize[tk->currentSample]);
+				tk->sampleSize[tk->nextSample]);
 		}
 		if (tk->metadata) {
 			struct mp4_track *metatk = tk->metadata;
 			/* TODO: check sync between metadata and ref track */
 			track_sample->metadata_size =
-				metatk->sampleSize[tk->currentSample];
+				metatk->sampleSize[tk->nextSample];
 			if ((metadata_buffer) &&
-				(metatk->sampleSize[tk->currentSample] <=
+				(metatk->sampleSize[tk->nextSample] <=
 				metadata_buffer_size)) {
 				int _ret = fseeko(demux->file,
-					metatk->sampleOffset[tk->currentSample],
+					metatk->sampleOffset[tk->nextSample],
 					SEEK_SET);
 				MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
 					_ret == 0, -errno,
 					"failed to seek %" PRIu64
 					" bytes forward in file",
 					metatk->sampleOffset[
-						tk->currentSample]);
+						tk->nextSample]);
 				size_t count = fread(metadata_buffer,
-					metatk->sampleSize[tk->currentSample],
+					metatk->sampleSize[tk->nextSample],
 					1, demux->file);
 				MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
 					(count == 1), -EIO,
 					"failed to read %d bytes from file",
-					metatk->sampleSize[tk->currentSample]);
+					metatk->sampleSize[tk->nextSample]);
 			}
 		}
 		track_sample->silent = ((tk->pendingSeekTime) &&
-			(tk->sampleDecodingTime[tk->currentSample] <
+			(tk->sampleDecodingTime[tk->nextSample] <
 				tk->pendingSeekTime)) ? 1 : 0;
-		if (tk->sampleDecodingTime[tk->currentSample] >=
+		if (tk->sampleDecodingTime[tk->nextSample] >=
 			tk->pendingSeekTime)
 			tk->pendingSeekTime = 0;
 		track_sample->sample_dts =
-			(tk->sampleDecodingTime[tk->currentSample] * 1000000 +
+			(tk->sampleDecodingTime[tk->nextSample] * 1000000 +
 			tk->timescale / 2) / tk->timescale;
 		track_sample->next_sample_dts =
-			(tk->currentSample < tk->sampleCount - 1) ?
-			(tk->sampleDecodingTime[tk->currentSample + 1] *
+			(tk->nextSample < tk->sampleCount - 1) ?
+			(tk->sampleDecodingTime[tk->nextSample + 1] *
 			1000000 + tk->timescale / 2) / tk->timescale : 0;
-		tk->currentSample++;
+		tk->nextSample++;
 	}
 
 	return 0;
+}
+
+
+int mp4_demux_seek_to_track_prev_sample(
+	struct mp4_demux *demux,
+	unsigned int track_id)
+{
+	struct mp4_track *tk = NULL;
+	int found = 0, idx;
+	uint64_t ts;
+
+	MP4_RETURN_ERR_IF_FAILED(demux != NULL, -EINVAL);
+
+	for (tk = demux->track; tk; tk = tk->next) {
+		if (tk->id == track_id) {
+			found = 1;
+			break;
+		}
+	}
+
+	if (!found) {
+		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(1, -ENOENT,
+			"track not found");
+	}
+
+	idx = (tk->nextSample >= 2) ? tk->nextSample - 2 : 0;
+	ts = (tk->sampleDecodingTime[idx] * 1000000 + tk->timescale / 2) /
+		tk->timescale;
+
+	return mp4_demux_seek(demux, ts, 1);
 }
 
 

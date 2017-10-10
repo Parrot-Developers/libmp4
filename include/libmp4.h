@@ -172,6 +172,11 @@ int mp4_demux_get_track_next_sample(
 	struct mp4_track_sample *track_sample);
 
 
+int mp4_demux_seek_to_track_prev_sample(
+	struct mp4_demux *demux,
+	unsigned int track_id);
+
+
 int mp4_demux_get_chapters(
 	struct mp4_demux *demux,
 	unsigned int *chaptersCount,
