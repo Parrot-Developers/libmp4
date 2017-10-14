@@ -15,6 +15,7 @@ LOCAL_SRC_FILES := \
 	src/mp4_demux.c \
 	src/mp4_log.c
 LOCAL_EXPORT_C_INCLUDES := $(LOCAL_PATH)/include
+LOCAL_LIBRARIES := libfutils
 LOCAL_CONDITIONAL_LIBRARIES := OPTIONAL:libulog
 
 ifeq ("$(TARGET_OS)","windows")

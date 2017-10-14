@@ -144,6 +144,7 @@ struct mp4_demux *mp4_demux_open(
 	}
 	memset(demux, 0, sizeof(*demux));
 	mp4 = &demux->mp4;
+	list_init(&mp4->tracks);
 
 	mp4->file = fopen(filename, "rb");
 	if (mp4->file == NULL) {
@@ -166,8 +167,18 @@ struct mp4_demux *mp4_demux_open(
 		goto error;
 	}
 
+	mp4->root = mp4_box_new(NULL);
+	if (mp4->root == NULL) {
+		MP4_LOGE("allocation failed");
+		err = -ENOMEM;
+		goto error;
+	}
+	mp4->root->type = MP4_ROOT_BOX;
+	mp4->root->size = 1;
+	mp4->root->largesize = mp4->fileSize;
+
 	retBytes = mp4_box_children_read(
-		mp4, &mp4->root, mp4->fileSize, NULL);
+		mp4, mp4->root, mp4->fileSize, NULL);
 	if (retBytes < 0) {
 		MP4_LOGE("mp4_box_children_read() failed (%" PRIi64 ")",
 			(int64_t)retBytes);
@@ -190,7 +201,7 @@ struct mp4_demux *mp4_demux_open(
 		goto error;
 	}
 
-	mp4_box_log(mp4, &mp4->root, 0);
+	mp4_box_log(mp4->root, 0, ULOG_DEBUG);
 
 	return demux;
 
@@ -212,8 +223,8 @@ int mp4_demux_close(
 		struct mp4_file *mp4 = &demux->mp4;
 		if (mp4->file)
 			fclose(mp4->file);
-		mp4_box_free(mp4, &mp4->root);
-		mp4_tracks_free(mp4);
+		mp4_box_destroy(mp4->root);
+		mp4_tracks_destroy(mp4);
 		unsigned int i;
 		for (i = 0; i < mp4->chaptersCount; i++)
 			free(mp4->chaptersName[i]);
@@ -253,7 +264,7 @@ int mp4_demux_seek(
 
 	mp4 = &demux->mp4;
 
-	for (tk = mp4->track; tk; tk = tk->next) {
+	list_walk_entry_forward(&mp4->tracks, tk, node) {
 		if (tk->type == MP4_TRACK_TYPE_CHAPTERS)
 			continue;
 		if ((tk->type == MP4_TRACK_TYPE_METADATA) && (tk->ref))
@@ -356,8 +367,8 @@ int mp4_demux_get_track_info(
 	struct mp4_track_info *track_info)
 {
 	struct mp4_file *mp4;
-	struct mp4_track *tk = NULL;
-	unsigned int k;
+	struct mp4_track *track = NULL, *tk = NULL;
+	unsigned int k = 0;
 
 	MP4_RETURN_ERR_IF_FAILED(demux != NULL, -EINVAL);
 	MP4_RETURN_ERR_IF_FAILED(track_info != NULL, -EINVAL);
@@ -368,9 +379,13 @@ int mp4_demux_get_track_info(
 
 	memset(track_info, 0, sizeof(*track_info));
 
-	for (tk = mp4->track, k = 0; (tk) && (k < track_idx);
-		tk = tk->next, k++)
-		;
+	list_walk_entry_forward(&mp4->tracks, track, node) {
+		if (k == track_idx) {
+			tk = track;
+			break;
+		}
+		k++;
+	}
 
 	if (tk) {
 		track_info->id = tk->id;
@@ -423,8 +438,8 @@ int mp4_demux_get_track_avc_decoder_config(
 	uint8_t **pps,
 	unsigned int *pps_size)
 {
-	struct mp4_track *tk = NULL;
-	int found = 0;
+	struct mp4_file *mp4;
+	struct mp4_track *track = NULL, *tk = NULL;
 
 	MP4_RETURN_ERR_IF_FAILED(demux != NULL, -EINVAL);
 	MP4_RETURN_ERR_IF_FAILED(sps != NULL, -EINVAL);
@@ -432,14 +447,16 @@ int mp4_demux_get_track_avc_decoder_config(
 	MP4_RETURN_ERR_IF_FAILED(pps != NULL, -EINVAL);
 	MP4_RETURN_ERR_IF_FAILED(pps_size != NULL, -EINVAL);
 
-	for (tk = demux->mp4.track; tk; tk = tk->next) {
-		if (tk->id == track_id) {
-			found = 1;
+	mp4 = &demux->mp4;
+
+	list_walk_entry_forward(&mp4->tracks, track, node) {
+		if (track->id == track_id) {
+			tk = track;
 			break;
 		}
 	}
 
-	if (!found) {
+	if (!tk) {
 		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(1, -ENOENT,
 			"track not found");
 	}
@@ -467,8 +484,7 @@ int mp4_demux_get_track_next_sample(
 	struct mp4_track_sample *track_sample)
 {
 	struct mp4_file *mp4;
-	struct mp4_track *tk = NULL;
-	int found = 0;
+	struct mp4_track *track = NULL, *tk = NULL;
 
 	MP4_RETURN_ERR_IF_FAILED(demux != NULL, -EINVAL);
 	MP4_RETURN_ERR_IF_FAILED(track_sample != NULL, -EINVAL);
@@ -477,14 +493,14 @@ int mp4_demux_get_track_next_sample(
 
 	memset(track_sample, 0, sizeof(*track_sample));
 
-	for (tk = mp4->track; tk; tk = tk->next) {
-		if (tk->id == track_id) {
-			found = 1;
+	list_walk_entry_forward(&mp4->tracks, track, node) {
+		if (track->id == track_id) {
+			tk = track;
 			break;
 		}
 	}
 
-	if (!found) {
+	if (!tk) {
 		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(1, -ENOENT,
 			"track not found");
 	}
@@ -563,22 +579,22 @@ int mp4_demux_seek_to_track_prev_sample(
 	unsigned int track_id)
 {
 	struct mp4_file *mp4;
-	struct mp4_track *tk = NULL;
-	int found = 0, idx;
+	struct mp4_track *track = NULL, *tk = NULL;
+	int idx;
 	uint64_t ts;
 
 	MP4_RETURN_ERR_IF_FAILED(demux != NULL, -EINVAL);
 
 	mp4 = &demux->mp4;
 
-	for (tk = mp4->track; tk; tk = tk->next) {
-		if (tk->id == track_id) {
-			found = 1;
+	list_walk_entry_forward(&mp4->tracks, track, node) {
+		if (track->id == track_id) {
+			tk = track;
 			break;
 		}
 	}
 
-	if (!found) {
+	if (!tk) {
 		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(1, -ENOENT,
 			"track not found");
 	}

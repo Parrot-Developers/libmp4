@@ -39,55 +39,71 @@
 #include "mp4.h"
 
 
-void mp4_box_free(
-	struct mp4_file *mp4,
-	struct mp4_box_item *parent)
+struct mp4_box *mp4_box_new(
+	struct mp4_box *parent)
 {
-	struct mp4_box_item *item = NULL, *next = NULL;
+	struct mp4_box *box = calloc(1, sizeof(*box));
+	MP4_RETURN_VAL_IF_FAILED(box != NULL, -ENOMEM, NULL);
+	list_node_unref(&box->node);
+	list_init(&box->children);
 
-	for (item = parent->child; item; item = next) {
-		next = item->next;
-		if (item->child)
-			mp4_box_free(mp4, item);
-		free(item);
+	box->parent = parent;
+	if (parent)
+		list_add_after(list_last(&parent->children), &box->node);
+
+	return box;
+}
+
+
+int mp4_box_destroy(
+	struct mp4_box *box)
+{
+	MP4_RETURN_ERR_IF_FAILED(box != NULL, -EINVAL);
+
+	struct mp4_box *child = NULL, *tmp = NULL;
+	list_walk_entry_forward_safe(&box->children, child, tmp, node) {
+		int ret = mp4_box_destroy(child);
+		if (ret != 0)
+			MP4_LOGE("mp4_box_destroy() failed: %d(%s)",
+				ret, strerror(-ret));
 	}
+
+	if (list_node_is_ref(&box->node))
+		list_del(&box->node);
+	free(box);
+	return 0;
 }
 
 
 void mp4_box_log(
-	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
+	int indent,
 	int level)
 {
-	struct mp4_box_item *item = NULL;
+	char spaces[101];
+	memset(spaces, ' ', sizeof(spaces));
+	if (indent > 50)
+		indent = 50;
+	spaces[indent * 2] = '\0';
+	char a = (char)((box->type >> 24) & 0xFF);
+	char b = (char)((box->type >> 16) & 0xFF);
+	char c = (char)((box->type >> 8) & 0xFF);
+	char d = (char)(box->type & 0xFF);
+	ULOG_PRI(level, "%s- %c%c%c%c size %" PRIu64 "\n", spaces,
+		(a >= 32) ? a : '.', (b >= 32) ? b : '.',
+		(c >= 32) ? c : '.', (d >= 32) ? d : '.',
+		(box->size == 1) ?
+		box->largesize : box->size);
 
-	for (item = parent->child; item; item = item->next) {
-		int k;
-		char spaces[101];
-		for (k = 0; k < level && k < 50; k++) {
-			spaces[k * 2] = ' ';
-			spaces[k * 2 + 1] = ' ';
-		}
-		spaces[k * 2] = '\0';
-		char a = (char)((item->box.type >> 24) & 0xFF);
-		char b = (char)((item->box.type >> 16) & 0xFF);
-		char c = (char)((item->box.type >> 8) & 0xFF);
-		char d = (char)(item->box.type & 0xFF);
-		MP4_LOGD("%s- %c%c%c%c size %" PRIu64 "\n", spaces,
-			(a >= 32) ? a : '.', (b >= 32) ? b : '.',
-			(c >= 32) ? c : '.', (d >= 32) ? d : '.',
-			(item->box.size == 1) ?
-			item->box.largesize : item->box.size);
-
-		if (item->child)
-			mp4_box_log(mp4, item, level + 1);
-	}
+	struct mp4_box *child = NULL;
+	list_walk_entry_forward(&box->children, child, node)
+		mp4_box_log(child, indent + 1, level);
 }
 
 
 static off_t mp4_box_ftyp_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
 	off_t maxBytes)
 {
 	off_t boxReadBytes = 0;
@@ -133,7 +149,7 @@ static off_t mp4_box_ftyp_read(
 
 static off_t mp4_box_mvhd_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
 	off_t maxBytes)
 {
 	off_t boxReadBytes = 0;
@@ -266,7 +282,7 @@ static off_t mp4_box_mvhd_read(
 
 static off_t mp4_box_tkhd_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
 	off_t maxBytes,
 	struct mp4_track *track)
 {
@@ -410,7 +426,7 @@ static off_t mp4_box_tkhd_read(
 
 static off_t mp4_box_tref_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
 	off_t maxBytes,
 	struct mp4_track *track)
 {
@@ -453,7 +469,7 @@ static off_t mp4_box_tref_read(
 
 static off_t mp4_box_mdhd_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
 	off_t maxBytes,
 	struct mp4_track *track)
 {
@@ -566,7 +582,7 @@ static off_t mp4_box_mdhd_read(
 
 static off_t mp4_box_vmhd_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
 	off_t maxBytes,
 	struct mp4_track *track)
 {
@@ -611,7 +627,7 @@ static off_t mp4_box_vmhd_read(
 
 static off_t mp4_box_smhd_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
 	off_t maxBytes,
 	struct mp4_track *track)
 {
@@ -645,7 +661,7 @@ static off_t mp4_box_smhd_read(
 
 static off_t mp4_box_hmhd_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
 	off_t maxBytes,
 	struct mp4_track *track)
 {
@@ -693,7 +709,7 @@ static off_t mp4_box_hmhd_read(
 
 static off_t mp4_box_nmhd_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
 	off_t maxBytes,
 	struct mp4_track *track)
 {
@@ -721,7 +737,7 @@ static off_t mp4_box_nmhd_read(
 
 static off_t mp4_box_hdlr_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
 	off_t maxBytes,
 	struct mp4_track *track)
 {
@@ -752,8 +768,8 @@ static off_t mp4_box_hdlr_read(
 		(char)((handlerType >> 8) & 0xFF),
 		(char)(handlerType & 0xFF));
 
-	if ((track) && (parent) && (parent->parent) &&
-		(parent->parent->box.type == MP4_MEDIA_BOX)) {
+	if ((track) && (box) && (box->parent) &&
+		(box->parent->type == MP4_MEDIA_BOX)) {
 		switch (handlerType) {
 		case MP4_HANDLER_TYPE_VIDEO:
 			track->type = MP4_TRACK_TYPE_VIDEO;
@@ -925,7 +941,7 @@ static off_t mp4_box_avcc_read(
 
 static off_t mp4_box_stsd_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
 	off_t maxBytes,
 	struct mp4_track *track)
 {
@@ -1198,7 +1214,7 @@ static off_t mp4_box_stsd_read(
 
 static off_t mp4_box_stts_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
 	off_t maxBytes,
 	struct mp4_track *track)
 {
@@ -1262,7 +1278,7 @@ static off_t mp4_box_stts_read(
 
 static off_t mp4_box_stss_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
 	off_t maxBytes,
 	struct mp4_track *track)
 {
@@ -1320,7 +1336,7 @@ static off_t mp4_box_stss_read(
 
 static off_t mp4_box_stsz_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
 	off_t maxBytes,
 	struct mp4_track *track)
 {
@@ -1387,7 +1403,7 @@ static off_t mp4_box_stsz_read(
 
 static off_t mp4_box_stsc_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
 	off_t maxBytes,
 	struct mp4_track *track)
 {
@@ -1462,7 +1478,7 @@ static off_t mp4_box_stsc_read(
 
 static off_t mp4_box_stco_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
 	off_t maxBytes,
 	struct mp4_track *track)
 {
@@ -1518,7 +1534,7 @@ static off_t mp4_box_stco_read(
 
 static off_t mp4_box_co64_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
 	off_t maxBytes,
 	struct mp4_track *track)
 {
@@ -1576,15 +1592,15 @@ static off_t mp4_box_co64_read(
 
 static off_t mp4_box_xyz_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
 	off_t maxBytes,
 	struct mp4_track *track)
 {
 	off_t boxReadBytes = 0;
 	uint16_t val16;
 
-	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((parent != NULL), -EINVAL,
-		"invalid parent");
+	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((box != NULL), -EINVAL,
+		"invalid box");
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 4), -EINVAL,
 		"invalid size: %" PRIi64 " expected %d min",
@@ -1606,10 +1622,10 @@ static off_t mp4_box_xyz_read(
 
 	mp4->udtaLocationKey = malloc(5);
 	MP4_RETURN_ERR_IF_FAILED((mp4->udtaLocationKey != NULL), -ENOMEM);
-	mp4->udtaLocationKey[0] = ((parent->box.type >> 24) & 0xFF);
-	mp4->udtaLocationKey[1] = ((parent->box.type >> 16) & 0xFF);
-	mp4->udtaLocationKey[2] = ((parent->box.type >> 8) & 0xFF);
-	mp4->udtaLocationKey[3] = (parent->box.type & 0xFF);
+	mp4->udtaLocationKey[0] = ((box->type >> 24) & 0xFF);
+	mp4->udtaLocationKey[1] = ((box->type >> 16) & 0xFF);
+	mp4->udtaLocationKey[2] = ((box->type >> 8) & 0xFF);
+	mp4->udtaLocationKey[3] = (box->type & 0xFF);
 	mp4->udtaLocationKey[4] = '\0';
 
 	mp4->udtaLocationValue = malloc(locationSize + 1);
@@ -1631,7 +1647,7 @@ static off_t mp4_box_xyz_read(
 
 static int mp4_ilst_sub_box_count(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
 	off_t maxBytes,
 	struct mp4_track *track)
 {
@@ -1695,7 +1711,7 @@ static int mp4_ilst_sub_box_count(
 
 static off_t mp4_box_meta_keys_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
 	off_t maxBytes,
 	struct mp4_track *track)
 {
@@ -1779,14 +1795,14 @@ static off_t mp4_box_meta_keys_read(
 
 static off_t mp4_box_meta_data_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
 	off_t maxBytes,
 	struct mp4_track *track)
 {
 	off_t boxReadBytes = 0;
 	uint32_t val32;
 
-	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((parent->parent != NULL), -EINVAL,
+	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((box->parent != NULL), -EINVAL,
 		"invalid parent");
 
 	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= 9), -EINVAL,
@@ -1807,7 +1823,7 @@ static off_t mp4_box_meta_data_read(
 	unsigned int valueLen = maxBytes - boxReadBytes;
 
 	if (clazz == MP4_METADATA_CLASS_UTF8) {
-		switch (parent->parent->box.type & 0xFFFFFF) {
+		switch (box->parent->type & 0xFFFFFF) {
 		case MP4_METADATA_TAG_TYPE_ARTIST:
 		case MP4_METADATA_TAG_TYPE_TITLE:
 		case MP4_METADATA_TAG_TYPE_DATE:
@@ -1823,13 +1839,13 @@ static off_t mp4_box_meta_data_read(
 			MP4_RETURN_ERR_IF_FAILED(
 				(mp4->udtaMetadataKey[idx] != NULL), -ENOMEM);
 			mp4->udtaMetadataKey[idx][0] =
-				((parent->parent->box.type >> 24) & 0xFF);
+				((box->parent->type >> 24) & 0xFF);
 			mp4->udtaMetadataKey[idx][1] =
-				((parent->parent->box.type >> 16) & 0xFF);
+				((box->parent->type >> 16) & 0xFF);
 			mp4->udtaMetadataKey[idx][2] =
-				((parent->parent->box.type >> 8) & 0xFF);
+				((box->parent->type >> 8) & 0xFF);
 			mp4->udtaMetadataKey[idx][3] =
-				(parent->parent->box.type & 0xFF);
+				(box->parent->type & 0xFF);
 			mp4->udtaMetadataKey[idx][4] = '\0';
 			mp4->udtaMetadataValue[idx] = malloc(valueLen + 1);
 			MP4_RETURN_ERR_IF_FAILED(
@@ -1848,10 +1864,10 @@ static off_t mp4_box_meta_data_read(
 		}
 		default:
 		{
-			if ((parent->parent->box.type > 0) &&
-				(parent->parent->box.type <=
+			if ((box->parent->type > 0) &&
+				(box->parent->type <=
 				mp4->metaMetadataCount)) {
-				uint32_t idx = parent->parent->box.type - 1;
+				uint32_t idx = box->parent->type - 1;
 				mp4->metaMetadataValue[idx] =
 					malloc(valueLen + 1);
 				MP4_RETURN_ERR_IF_FAILED(
@@ -1876,7 +1892,7 @@ static off_t mp4_box_meta_data_read(
 	} else if ((clazz == MP4_METADATA_CLASS_JPEG) ||
 		(clazz == MP4_METADATA_CLASS_PNG) ||
 		(clazz == MP4_METADATA_CLASS_BMP)) {
-		uint32_t type = parent->parent->box.type;
+		uint32_t type = box->parent->type;
 		if (type == MP4_METADATA_TAG_TYPE_COVER) {
 			mp4->udtaCoverOffset = ftello(mp4->file);
 			mp4->udtaCoverSize = valueLen;
@@ -1931,47 +1947,48 @@ static off_t mp4_box_meta_data_read(
 
 off_t mp4_box_children_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *parent,
 	off_t maxBytes,
 	struct mp4_track *track)
 {
 	off_t parentReadBytes = 0;
 	int ret = 0, lastBox = 0;
-	struct mp4_box_item *prev = NULL;
 
 	while ((!feof(mp4->file)) && (!lastBox) &&
 		(parentReadBytes + 8 < maxBytes)) {
 		off_t boxReadBytes = 0, realBoxSize;
 		uint32_t val32;
-		struct mp4_box box;
-		memset(&box, 0, sizeof(box));
+
+		/* keep the box in the tree */
+		struct mp4_box *box = mp4_box_new(parent);
+		MP4_RETURN_ERR_IF_FAILED((box != NULL), -ENOMEM);
 
 		/* box size */
 		MP4_READ_32(mp4->file, val32, boxReadBytes);
-		box.size = ntohl(val32);
+		box->size = ntohl(val32);
 
 		/* box type */
 		MP4_READ_32(mp4->file, val32, boxReadBytes);
-		box.type = ntohl(val32);
-		if ((parent) && (parent->box.type == MP4_ILST_BOX) &&
-			(box.type <= mp4->metaMetadataCount))
+		box->type = ntohl(val32);
+		if ((parent) && (parent->type == MP4_ILST_BOX) &&
+			(box->type <= mp4->metaMetadataCount))
 			MP4_LOGD("offset 0x%" PRIx64
 				" metadata box size %" PRIu32,
-				(int64_t)ftello(mp4->file), box.size);
+				(int64_t)ftello(mp4->file), box->size);
 		else
 			MP4_LOGD("offset 0x%" PRIx64
 				" box '%c%c%c%c' size %" PRIu32,
 				(int64_t)ftello(mp4->file),
-				(box.type >> 24) & 0xFF,
-				(box.type >> 16) & 0xFF,
-				(box.type >> 8) & 0xFF,
-				box.type & 0xFF, box.size);
+				(box->type >> 24) & 0xFF,
+				(box->type >> 16) & 0xFF,
+				(box->type >> 8) & 0xFF,
+				box->type & 0xFF, box->size);
 
-		if (box.size == 0) {
+		if (box->size == 0) {
 			/* box extends to end of file */
 			lastBox = 1;
 			realBoxSize = mp4->fileSize - mp4->readBytes;
-		} else if (box.size == 1) {
+		} else if (box->size == 1) {
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
 				(maxBytes >= parentReadBytes + 16), -EINVAL,
 				"invalid size: %" PRIi64 " expected %"
@@ -1980,12 +1997,13 @@ off_t mp4_box_children_read(
 
 			/* large size */
 			MP4_READ_32(mp4->file, val32, boxReadBytes);
-			box.largesize = (uint64_t)ntohl(val32) << 32;
+			box->largesize = (uint64_t)ntohl(val32) << 32;
 			MP4_READ_32(mp4->file, val32, boxReadBytes);
-			box.largesize |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
-			realBoxSize = box.largesize;
+			box->largesize |=
+				(uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
+			realBoxSize = box->largesize;
 		} else
-			realBoxSize = box.size;
+			realBoxSize = box->size;
 
 		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
 			(maxBytes >= parentReadBytes + realBoxSize), -EINVAL,
@@ -1993,38 +2011,23 @@ off_t mp4_box_children_read(
 			(int64_t)maxBytes,
 			(int64_t)parentReadBytes + realBoxSize);
 
-		/* keep the box in the tree */
-		struct mp4_box_item *item = malloc(sizeof(*item));
-		MP4_RETURN_ERR_IF_FAILED((item != NULL), -ENOMEM);
-		memset(item, 0, sizeof(*item));
-		memcpy(&item->box, &box, sizeof(box));
-		item->parent = parent;
-		if (prev == NULL) {
-			if (parent)
-				parent->child = item;
-		} else {
-			prev->next = item;
-			item->prev = prev;
-		}
-		prev = item;
-
-		switch (box.type) {
+		switch (box->type) {
 		case MP4_UUID:
 		{
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
 				((unsigned)(realBoxSize - boxReadBytes) >=
-				sizeof(box.uuid)), -EINVAL,
+				sizeof(box->uuid)), -EINVAL,
 				"invalid size: %" PRIi64 " expected %zu min",
 				(int64_t)realBoxSize - boxReadBytes,
-				sizeof(box.uuid));
+				sizeof(box->uuid));
 
 			/* box extended type */
-			size_t count = fread(box.uuid, sizeof(box.uuid),
+			size_t count = fread(box->uuid, sizeof(box->uuid),
 				1, mp4->file);
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -EIO,
 				"failed to read %zu bytes from file",
-				sizeof(box.uuid));
-			boxReadBytes += sizeof(box.uuid);
+				sizeof(box->uuid));
+			boxReadBytes += sizeof(box->uuid);
 			break;
 		}
 		case MP4_MOVIE_BOX:
@@ -2035,7 +2038,7 @@ off_t mp4_box_children_read(
 		case MP4_SAMPLE_TABLE_BOX:
 		{
 			off_t _ret = mp4_box_children_read(
-				mp4, item, realBoxSize - boxReadBytes, track);
+				mp4, box, realBoxSize - boxReadBytes, track);
 			MP4_RETURN_ERR_IF_FAILED((_ret >= 0), (int)_ret);
 			boxReadBytes += _ret;
 			break;
@@ -2043,7 +2046,7 @@ off_t mp4_box_children_read(
 		case MP4_FILE_TYPE_BOX:
 		{
 			off_t _ret = mp4_box_ftyp_read(
-				mp4, item, realBoxSize - boxReadBytes);
+				mp4, box, realBoxSize - boxReadBytes);
 			MP4_RETURN_ERR_IF_FAILED((_ret >= 0), (int)_ret);
 			boxReadBytes += _ret;
 			break;
@@ -2051,7 +2054,7 @@ off_t mp4_box_children_read(
 		case MP4_MOVIE_HEADER_BOX:
 		{
 			off_t _ret = mp4_box_mvhd_read(
-				mp4, item, realBoxSize - boxReadBytes);
+				mp4, box, realBoxSize - boxReadBytes);
 			MP4_RETURN_ERR_IF_FAILED((_ret >= 0), (int)_ret);
 			boxReadBytes += _ret;
 			break;
@@ -2059,17 +2062,11 @@ off_t mp4_box_children_read(
 		case MP4_TRACK_BOX:
 		{
 			/* keep the track in the list */
-			struct mp4_track *tk = malloc(sizeof(*tk));
+			struct mp4_track *tk = mp4_track_add(mp4);
 			MP4_RETURN_ERR_IF_FAILED((tk != NULL), -ENOMEM);
-			memset(tk, 0, sizeof(*tk));
-			tk->next = mp4->track;
-			if (mp4->track)
-				mp4->track->prev = tk;
-			mp4->track = tk;
-			mp4->trackCount++;
 
 			off_t _ret = mp4_box_children_read(
-				mp4, item, realBoxSize - boxReadBytes, tk);
+				mp4, box, realBoxSize - boxReadBytes, tk);
 			MP4_RETURN_ERR_IF_FAILED((_ret >= 0), (int)_ret);
 			boxReadBytes += _ret;
 			break;
@@ -2077,7 +2074,7 @@ off_t mp4_box_children_read(
 		case MP4_TRACK_HEADER_BOX:
 		{
 			off_t _ret = mp4_box_tkhd_read(
-				mp4, item, realBoxSize - boxReadBytes, track);
+				mp4, box, realBoxSize - boxReadBytes, track);
 			MP4_RETURN_ERR_IF_FAILED((_ret >= 0), (int)_ret);
 			boxReadBytes += _ret;
 			break;
@@ -2085,7 +2082,7 @@ off_t mp4_box_children_read(
 		case MP4_TRACK_REFERENCE_BOX:
 		{
 			off_t _ret = mp4_box_tref_read(
-				mp4, item, realBoxSize - boxReadBytes, track);
+				mp4, box, realBoxSize - boxReadBytes, track);
 			MP4_RETURN_ERR_IF_FAILED((_ret >= 0), (int)_ret);
 			boxReadBytes += _ret;
 			break;
@@ -2093,7 +2090,7 @@ off_t mp4_box_children_read(
 		case MP4_HANDLER_REFERENCE_BOX:
 		{
 			off_t _ret = mp4_box_hdlr_read(
-				mp4, item, realBoxSize - boxReadBytes, track);
+				mp4, box, realBoxSize - boxReadBytes, track);
 			MP4_RETURN_ERR_IF_FAILED((_ret >= 0), (int)_ret);
 			boxReadBytes += _ret;
 			break;
@@ -2101,7 +2098,7 @@ off_t mp4_box_children_read(
 		case MP4_MEDIA_HEADER_BOX:
 		{
 			off_t _ret = mp4_box_mdhd_read(
-				mp4, item, realBoxSize - boxReadBytes, track);
+				mp4, box, realBoxSize - boxReadBytes, track);
 			MP4_RETURN_ERR_IF_FAILED((_ret >= 0), (int)_ret);
 			boxReadBytes += _ret;
 			break;
@@ -2109,7 +2106,7 @@ off_t mp4_box_children_read(
 		case MP4_VIDEO_MEDIA_HEADER_BOX:
 		{
 			off_t _ret = mp4_box_vmhd_read(
-				mp4, item, realBoxSize - boxReadBytes, track);
+				mp4, box, realBoxSize - boxReadBytes, track);
 			MP4_RETURN_ERR_IF_FAILED((_ret >= 0), (int)_ret);
 			boxReadBytes += _ret;
 			break;
@@ -2117,7 +2114,7 @@ off_t mp4_box_children_read(
 		case MP4_SOUND_MEDIA_HEADER_BOX:
 		{
 			off_t _ret = mp4_box_smhd_read(
-				mp4, item, realBoxSize - boxReadBytes, track);
+				mp4, box, realBoxSize - boxReadBytes, track);
 			MP4_RETURN_ERR_IF_FAILED((_ret >= 0), (int)_ret);
 			boxReadBytes += _ret;
 			break;
@@ -2125,7 +2122,7 @@ off_t mp4_box_children_read(
 		case MP4_HINT_MEDIA_HEADER_BOX:
 		{
 			off_t _ret = mp4_box_hmhd_read(
-				mp4, item, realBoxSize - boxReadBytes, track);
+				mp4, box, realBoxSize - boxReadBytes, track);
 			MP4_RETURN_ERR_IF_FAILED((_ret >= 0), (int)_ret);
 			boxReadBytes += _ret;
 			break;
@@ -2133,7 +2130,7 @@ off_t mp4_box_children_read(
 		case MP4_NULL_MEDIA_HEADER_BOX:
 		{
 			off_t _ret = mp4_box_nmhd_read(
-				mp4, item, realBoxSize - boxReadBytes, track);
+				mp4, box, realBoxSize - boxReadBytes, track);
 			MP4_RETURN_ERR_IF_FAILED((_ret >= 0), (int)_ret);
 			boxReadBytes += _ret;
 			break;
@@ -2141,7 +2138,7 @@ off_t mp4_box_children_read(
 		case MP4_SAMPLE_DESCRIPTION_BOX:
 		{
 			off_t _ret = mp4_box_stsd_read(
-				mp4, item, realBoxSize - boxReadBytes, track);
+				mp4, box, realBoxSize - boxReadBytes, track);
 			MP4_RETURN_ERR_IF_FAILED((_ret >= 0), (int)_ret);
 			boxReadBytes += _ret;
 			break;
@@ -2149,7 +2146,7 @@ off_t mp4_box_children_read(
 		case MP4_DECODING_TIME_TO_SAMPLE_BOX:
 		{
 			off_t _ret = mp4_box_stts_read(
-				mp4, item, realBoxSize - boxReadBytes, track);
+				mp4, box, realBoxSize - boxReadBytes, track);
 			MP4_RETURN_ERR_IF_FAILED((_ret >= 0), (int)_ret);
 			boxReadBytes += _ret;
 			break;
@@ -2157,7 +2154,7 @@ off_t mp4_box_children_read(
 		case MP4_SYNC_SAMPLE_BOX:
 		{
 			off_t _ret = mp4_box_stss_read(
-				mp4, item, realBoxSize - boxReadBytes, track);
+				mp4, box, realBoxSize - boxReadBytes, track);
 			MP4_RETURN_ERR_IF_FAILED((_ret >= 0), (int)_ret);
 			boxReadBytes += _ret;
 			break;
@@ -2165,7 +2162,7 @@ off_t mp4_box_children_read(
 		case MP4_SAMPLE_SIZE_BOX:
 		{
 			off_t _ret = mp4_box_stsz_read(
-				mp4, item, realBoxSize - boxReadBytes, track);
+				mp4, box, realBoxSize - boxReadBytes, track);
 			MP4_RETURN_ERR_IF_FAILED((_ret >= 0), (int)_ret);
 			boxReadBytes += _ret;
 			break;
@@ -2173,7 +2170,7 @@ off_t mp4_box_children_read(
 		case MP4_SAMPLE_TO_CHUNK_BOX:
 		{
 			off_t _ret = mp4_box_stsc_read(
-				mp4, item, realBoxSize - boxReadBytes, track);
+				mp4, box, realBoxSize - boxReadBytes, track);
 			MP4_RETURN_ERR_IF_FAILED((_ret >= 0), (int)_ret);
 			boxReadBytes += _ret;
 			break;
@@ -2181,7 +2178,7 @@ off_t mp4_box_children_read(
 		case MP4_CHUNK_OFFSET_BOX:
 		{
 			off_t _ret = mp4_box_stco_read(
-				mp4, item, realBoxSize - boxReadBytes, track);
+				mp4, box, realBoxSize - boxReadBytes, track);
 			MP4_RETURN_ERR_IF_FAILED((_ret >= 0), (int)_ret);
 			boxReadBytes += _ret;
 			break;
@@ -2189,7 +2186,7 @@ off_t mp4_box_children_read(
 		case MP4_CHUNK_OFFSET_64_BOX:
 		{
 			off_t _ret = mp4_box_co64_read(
-				mp4, item, realBoxSize - boxReadBytes, track);
+				mp4, box, realBoxSize - boxReadBytes, track);
 			MP4_RETURN_ERR_IF_FAILED((_ret >= 0), (int)_ret);
 			boxReadBytes += _ret;
 			break;
@@ -2197,7 +2194,7 @@ off_t mp4_box_children_read(
 		case MP4_META_BOX:
 		{
 			if ((parent) &&
-				(parent->box.type == MP4_USER_DATA_BOX)) {
+				(parent->type == MP4_USER_DATA_BOX)) {
 				MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
 					(realBoxSize - boxReadBytes >= 4),
 					-EINVAL, "invalid size: %" PRIi64
@@ -2212,16 +2209,14 @@ off_t mp4_box_children_read(
 				MP4_LOGD("# meta: version=%d", version);
 				MP4_LOGD("# meta: flags=%" PRIu32, flags);
 
-				off_t _ret = mp4_box_children_read(
-					mp4, item,
+				off_t _ret = mp4_box_children_read(mp4, box,
 					realBoxSize - boxReadBytes, track);
 				MP4_RETURN_ERR_IF_FAILED((_ret >= 0),
 					(int)_ret);
 				boxReadBytes += _ret;
 			} else if ((parent) &&
-				(parent->box.type == MP4_MOVIE_BOX)) {
-				off_t _ret = mp4_box_children_read(
-					mp4, item,
+				(parent->type == MP4_MOVIE_BOX)) {
+				off_t _ret = mp4_box_children_read(mp4, box,
 					realBoxSize - boxReadBytes, track);
 				MP4_RETURN_ERR_IF_FAILED((_ret >= 0),
 					(int)_ret);
@@ -2232,10 +2227,10 @@ off_t mp4_box_children_read(
 		case MP4_ILST_BOX:
 		{
 			if ((parent) && (parent->parent) &&
-				(parent->parent->box.type ==
+				(parent->parent->type ==
 				MP4_USER_DATA_BOX)) {
 				mp4->udtaMetadataCount =
-					mp4_ilst_sub_box_count(mp4, item,
+					mp4_ilst_sub_box_count(mp4, box,
 					realBoxSize - boxReadBytes, track);
 				if (mp4->udtaMetadataCount > 0) {
 					char **key =
@@ -2256,7 +2251,7 @@ off_t mp4_box_children_read(
 				}
 			}
 			off_t _ret = mp4_box_children_read(
-				mp4, item, realBoxSize - boxReadBytes, track);
+				mp4, box, realBoxSize - boxReadBytes, track);
 			MP4_RETURN_ERR_IF_FAILED((_ret >= 0), (int)_ret);
 			boxReadBytes += _ret;
 			break;
@@ -2264,7 +2259,7 @@ off_t mp4_box_children_read(
 		case MP4_DATA_BOX:
 		{
 			off_t _ret = mp4_box_meta_data_read(
-				mp4, item, realBoxSize - boxReadBytes, track);
+				mp4, box, realBoxSize - boxReadBytes, track);
 			MP4_RETURN_ERR_IF_FAILED((_ret >= 0), (int)_ret);
 			boxReadBytes += _ret;
 			break;
@@ -2272,9 +2267,8 @@ off_t mp4_box_children_read(
 		case MP4_LOCATION_BOX:
 		{
 			if ((parent) &&
-				(parent->box.type == MP4_USER_DATA_BOX)) {
-				off_t _ret = mp4_box_xyz_read(
-					mp4, item,
+				(parent->type == MP4_USER_DATA_BOX)) {
+				off_t _ret = mp4_box_xyz_read(mp4, box,
 					realBoxSize - boxReadBytes, track);
 				MP4_RETURN_ERR_IF_FAILED((_ret >= 0),
 					(int)_ret);
@@ -2284,9 +2278,8 @@ off_t mp4_box_children_read(
 		}
 		case MP4_KEYS_BOX:
 		{
-			if ((parent) && (parent->box.type == MP4_META_BOX)) {
-				off_t _ret = mp4_box_meta_keys_read(
-					mp4, item,
+			if ((parent) && (parent->type == MP4_META_BOX)) {
+				off_t _ret = mp4_box_meta_keys_read(mp4, box,
 					realBoxSize - boxReadBytes, track);
 				MP4_RETURN_ERR_IF_FAILED((_ret >= 0),
 					(int)_ret);
@@ -2296,9 +2289,8 @@ off_t mp4_box_children_read(
 		}
 		default:
 		{
-			if ((parent) && (parent->box.type == MP4_ILST_BOX)) {
-				off_t _ret = mp4_box_children_read(
-					mp4, item,
+			if ((parent) && (parent->type == MP4_ILST_BOX)) {
+				off_t _ret = mp4_box_children_read(mp4, box,
 					realBoxSize - boxReadBytes, track);
 				MP4_RETURN_ERR_IF_FAILED((_ret >= 0),
 					(int)_ret);

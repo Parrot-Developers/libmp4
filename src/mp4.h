@@ -58,11 +58,13 @@
 #endif /* !_WIN32 */
 
 #include <libmp4.h>
+#include <futils/futils.h>
 
 #include "mp4_log.h"
 
 
 #define MP4_UUID                            0x75756964 /* "uuid" */
+#define MP4_ROOT_BOX                        0x726f6f74 /* "root" */
 #define MP4_FILE_TYPE_BOX                   0x66747970 /* "ftyp" */
 #define MP4_MOVIE_BOX                       0x6d6f6f76 /* "moov" */
 #define MP4_USER_DATA_BOX                   0x75647461 /* "udta" */
@@ -134,16 +136,10 @@ struct mp4_box {
 	uint32_t type;
 	uint64_t largesize;
 	uint8_t uuid[16];
-};
+	struct mp4_box *parent;
+	struct list_node children;
 
-
-struct mp4_box_item {
-	struct mp4_box_item *parent;
-	struct mp4_box_item *child;
-	struct mp4_box_item *prev;
-	struct mp4_box_item *next;
-
-	struct mp4_box box;
+	struct list_node node;
 };
 
 
@@ -204,8 +200,7 @@ struct mp4_track {
 	struct mp4_track *metadata;
 	struct mp4_track *chapters;
 
-	struct mp4_track *prev;
-	struct mp4_track *next;
+	struct list_node node;
 };
 
 
@@ -213,8 +208,8 @@ struct mp4_file {
 	FILE *file;
 	off_t fileSize;
 	off_t readBytes;
-	struct mp4_box_item root;
-	struct mp4_track *track;
+	struct mp4_box *root;
+	struct list_node tracks;
 	unsigned int trackCount;
 	uint32_t timescale;
 	uint64_t duration;
@@ -297,20 +292,23 @@ struct mp4_demux {
 	} while (0)
 
 
-void mp4_box_free(
-	struct mp4_file *mp4,
-	struct mp4_box_item *parent);
+struct mp4_box *mp4_box_new(
+	struct mp4_box *parent);
+
+
+int mp4_box_destroy(
+	struct mp4_box *box);
 
 
 void mp4_box_log(
-	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *box,
+	int indent,
 	int level);
 
 
 off_t mp4_box_children_read(
 	struct mp4_file *mp4,
-	struct mp4_box_item *parent,
+	struct mp4_box *parent,
 	off_t maxBytes,
 	struct mp4_track *track);
 
@@ -321,7 +319,24 @@ int mp4_track_is_sync_sample(
 	int *prevSyncSampleIdx);
 
 
-void mp4_tracks_free(
+struct mp4_track *mp4_track_new(
+	void);
+
+
+int mp4_track_destroy(
+	struct mp4_track *track);
+
+
+struct mp4_track *mp4_track_add(
+	struct mp4_file *mp4);
+
+
+int mp4_track_remove(
+	struct mp4_file *mp4,
+	struct mp4_track *track);
+
+
+void mp4_tracks_destroy(
 	struct mp4_file *mp4);
 
 

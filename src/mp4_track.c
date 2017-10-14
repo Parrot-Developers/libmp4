@@ -67,24 +67,92 @@ int mp4_track_is_sync_sample(
 }
 
 
-void mp4_tracks_free(
+struct mp4_track *mp4_track_new(
+	void)
+{
+	struct mp4_track *track = calloc(1, sizeof(*track));
+	MP4_RETURN_VAL_IF_FAILED(track != NULL, -ENOMEM, NULL);
+	list_node_unref(&track->node);
+
+	return track;
+}
+
+
+int mp4_track_destroy(
+	struct mp4_track *track)
+{
+	MP4_RETURN_ERR_IF_FAILED(track != NULL, -EINVAL);
+
+	free(track->timeToSampleEntries);
+	free(track->sampleDecodingTime);
+	free(track->sampleSize);
+	free(track->chunkOffset);
+	free(track->sampleToChunkEntries);
+	free(track->sampleOffset);
+	free(track->videoSps);
+	free(track->videoPps);
+	free(track->metadataContentEncoding);
+	free(track->metadataMimeFormat);
+	free(track);
+	return 0;
+}
+
+
+struct mp4_track *mp4_track_add(
 	struct mp4_file *mp4)
 {
-	struct mp4_track *tk = NULL, *next = NULL;
+	MP4_RETURN_VAL_IF_FAILED(mp4 != NULL, -EINVAL, NULL);
 
-	for (tk = mp4->track; tk; tk = next) {
-		next = tk->next;
-		free(tk->timeToSampleEntries);
-		free(tk->sampleDecodingTime);
-		free(tk->sampleSize);
-		free(tk->chunkOffset);
-		free(tk->sampleToChunkEntries);
-		free(tk->sampleOffset);
-		free(tk->videoSps);
-		free(tk->videoPps);
-		free(tk->metadataContentEncoding);
-		free(tk->metadataMimeFormat);
-		free(tk);
+	struct mp4_track *track = mp4_track_new();
+	MP4_RETURN_VAL_IF_FAILED(track != NULL, -ENOMEM, NULL);
+	list_node_unref(&track->node);
+
+	/* add to the list */
+	list_add_after(list_last(&mp4->tracks), &track->node);
+	mp4->trackCount++;
+
+	return track;
+}
+
+
+int mp4_track_remove(
+	struct mp4_file *mp4,
+	struct mp4_track *track)
+{
+	MP4_RETURN_ERR_IF_FAILED(mp4 != NULL, -EINVAL);
+	MP4_RETURN_ERR_IF_FAILED(track != NULL, -EINVAL);
+
+	int found = 0;
+	struct mp4_track *_track = NULL;
+	list_walk_entry_forward(&mp4->tracks, _track, node) {
+		if (_track == track) {
+			found = 1;
+			break;
+		}
+	}
+
+	if (!found) {
+		MP4_LOGE("failed to find the track in the list");
+		return -EINVAL;
+	}
+
+	/* remove from the list */
+	list_del(&track->node);
+	mp4->trackCount--;
+
+	return mp4_track_destroy(track);
+}
+
+
+void mp4_tracks_destroy(
+	struct mp4_file *mp4)
+{
+	struct mp4_track *track = NULL, *tmp = NULL;
+	list_walk_entry_forward_safe(&mp4->tracks, track, tmp, node) {
+		int ret = mp4_track_destroy(track);
+		if (ret != 0)
+			MP4_LOGE("mp4_track_destroy() failed: %d(%s)",
+				ret, strerror(-ret));
 	}
 }
 
@@ -97,7 +165,7 @@ int mp4_tracks_build(
 	int videoTrackCount = 0, audioTrackCount = 0, hintTrackCount = 0;
 	int metadataTrackCount = 0, textTrackCount = 0;
 
-	for (tk = mp4->track; tk; tk = tk->next) {
+	list_walk_entry_forward(&mp4->tracks, tk, node) {
 		unsigned int i, j, k, n;
 		uint32_t lastFirstChunk = 1, lastSamplesPerChunk = 0;
 		uint32_t chunkCount, sampleCount = 0, chunkIdx;
@@ -200,15 +268,14 @@ int mp4_tracks_build(
 
 		/* link tracks using track references */
 		if ((tk->referenceType != 0) && (tk->referenceTrackId)) {
-			struct mp4_track *tkRef;
-			int found = 0;
-			for (tkRef = mp4->track; tkRef; tkRef = tkRef->next) {
-				if (tkRef->id == tk->referenceTrackId) {
-					found = 1;
+			struct mp4_track *t = NULL, *tkRef = NULL;
+			list_walk_entry_forward(&mp4->tracks, t, node) {
+				if (t->id == tk->referenceTrackId) {
+					tkRef = t;
 					break;
 				}
 			}
-			if (found) {
+			if (tkRef) {
 				if ((tk->referenceType ==
 					MP4_REFERENCE_TYPE_DESCRIPTION)
 					&& (tk->type ==
