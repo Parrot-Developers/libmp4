@@ -39,30 +39,7 @@
 #include "mp4.h"
 
 
-void mp4_demux_free_tracks(
-	struct mp4_demux *demux)
-{
-	struct mp4_track *tk = NULL, *next = NULL;
-
-	for (tk = demux->track; tk; tk = next) {
-		next = tk->next;
-		free(tk->timeToSampleEntries);
-		free(tk->sampleDecodingTime);
-		free(tk->sampleSize);
-		free(tk->chunkOffset);
-		free(tk->sampleToChunkEntries);
-		free(tk->sampleOffset);
-		free(tk->videoSps);
-		free(tk->videoPps);
-		free(tk->metadataContentEncoding);
-		free(tk->metadataMimeFormat);
-		free(tk);
-	}
-}
-
-
-int mp4_demux_is_sync_sample(
-	struct mp4_demux *demux,
+int mp4_track_is_sync_sample(
 	struct mp4_track *track,
 	unsigned int sampleIdx,
 	int *prevSyncSampleIdx)
@@ -90,15 +67,37 @@ int mp4_demux_is_sync_sample(
 }
 
 
-int mp4_demux_build_tracks(
-	struct mp4_demux *demux)
+void mp4_tracks_free(
+	struct mp4_file *mp4)
+{
+	struct mp4_track *tk = NULL, *next = NULL;
+
+	for (tk = mp4->track; tk; tk = next) {
+		next = tk->next;
+		free(tk->timeToSampleEntries);
+		free(tk->sampleDecodingTime);
+		free(tk->sampleSize);
+		free(tk->chunkOffset);
+		free(tk->sampleToChunkEntries);
+		free(tk->sampleOffset);
+		free(tk->videoSps);
+		free(tk->videoPps);
+		free(tk->metadataContentEncoding);
+		free(tk->metadataMimeFormat);
+		free(tk);
+	}
+}
+
+
+int mp4_tracks_build(
+	struct mp4_file *mp4)
 {
 	struct mp4_track *tk = NULL, *videoTk = NULL;
 	struct mp4_track *metaTk = NULL, *chapTk = NULL;
 	int videoTrackCount = 0, audioTrackCount = 0, hintTrackCount = 0;
 	int metadataTrackCount = 0, textTrackCount = 0;
 
-	for (tk = demux->track; tk; tk = tk->next) {
+	for (tk = mp4->track; tk; tk = tk->next) {
 		unsigned int i, j, k, n;
 		uint32_t lastFirstChunk = 1, lastSamplesPerChunk = 0;
 		uint32_t chunkCount, sampleCount = 0, chunkIdx;
@@ -203,7 +202,7 @@ int mp4_demux_build_tracks(
 		if ((tk->referenceType != 0) && (tk->referenceTrackId)) {
 			struct mp4_track *tkRef;
 			int found = 0;
-			for (tkRef = demux->track; tkRef; tkRef = tkRef->next) {
+			for (tkRef = mp4->track; tkRef; tkRef = tkRef->next) {
 				if (tkRef->id == tk->referenceTrackId) {
 					found = 1;
 					break;
@@ -244,22 +243,22 @@ int mp4_demux_build_tracks(
 			unsigned int sampleSize, readBytes = 0;
 			uint16_t sz;
 			sampleSize = chapTk->sampleSize[i];
-			int _ret = fseeko(demux->file,
+			int _ret = fseeko(mp4->file,
 				chapTk->sampleOffset[i], SEEK_SET);
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(_ret == 0, -errno,
 				"failed to seek %" PRIu64
 				" bytes forward in file",
 				chapTk->sampleOffset[i]);
-			MP4_READ_16(demux->file, sz, readBytes);
+			MP4_READ_16(mp4->file, sz, readBytes);
 			sz = ntohs(sz);
 			if (sz <= sampleSize - readBytes) {
 				char *chapName = malloc(sz + 1);
 				MP4_RETURN_ERR_IF_FAILED(
 					(chapName != NULL), -ENOMEM);
-				demux->chaptersName[demux->chaptersCount] =
+				mp4->chaptersName[mp4->chaptersCount] =
 					chapName;
 				size_t count = fread(
-					chapName, sz, 1, demux->file);
+					chapName, sz, 1, mp4->file);
 				MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
 					(count == 1), -EIO,
 					"failed to read %u bytes from file",
@@ -271,11 +270,11 @@ int mp4_demux_build_tracks(
 					1000000 + chapTk->timescale / 2) /
 					chapTk->timescale;
 				MP4_LOGD("chapter #%d time=%" PRIu64 " '%s'",
-					demux->chaptersCount + 1,
+					mp4->chaptersCount + 1,
 					chapTime, chapName);
-				demux->chaptersTime[demux->chaptersCount] =
+				mp4->chaptersTime[mp4->chaptersCount] =
 					chapTime;
-				demux->chaptersCount++;
+				mp4->chaptersCount++;
 			}
 		}
 	}

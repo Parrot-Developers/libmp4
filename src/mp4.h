@@ -209,7 +209,7 @@ struct mp4_track {
 };
 
 
-struct mp4_demux {
+struct mp4_file {
 	FILE *file;
 	off_t fileSize;
 	off_t readBytes;
@@ -247,6 +247,11 @@ struct mp4_demux {
 	unsigned int metaMetadataCount;
 	char **metaMetadataKey;
 	char **metaMetadataValue;
+};
+
+
+struct mp4_demux {
+	struct mp4_file mp4;
 };
 
 
@@ -292,37 +297,36 @@ struct mp4_demux {
 	} while (0)
 
 
-void mp4_demux_free_children(
-	struct mp4_demux *demux,
+void mp4_box_free(
+	struct mp4_file *mp4,
 	struct mp4_box_item *parent);
 
 
-void mp4_demux_print_children(
-	struct mp4_demux *demux,
+void mp4_box_log(
+	struct mp4_file *mp4,
 	struct mp4_box_item *parent,
 	int level);
 
 
-off_t mp4_demux_parse_children(
-	struct mp4_demux *demux,
+off_t mp4_box_children_read(
+	struct mp4_file *mp4,
 	struct mp4_box_item *parent,
 	off_t maxBytes,
 	struct mp4_track *track);
 
 
-void mp4_demux_free_tracks(
-	struct mp4_demux *demux);
-
-
-int mp4_demux_is_sync_sample(
-	struct mp4_demux *demux,
+int mp4_track_is_sync_sample(
 	struct mp4_track *track,
 	unsigned int sampleIdx,
 	int *prevSyncSampleIdx);
 
 
-int mp4_demux_build_tracks(
-	struct mp4_demux *demux);
+void mp4_tracks_free(
+	struct mp4_file *mp4);
+
+
+int mp4_tracks_build(
+	struct mp4_file *mp4);
 
 
 #endif /* !_MP4_H_ */

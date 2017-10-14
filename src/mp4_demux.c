@@ -39,86 +39,86 @@
 #include "mp4.h"
 
 
-static int mp4_demux_build_metadata(
-	struct mp4_demux *demux)
+static int mp4_metadata_build(
+	struct mp4_file *mp4)
 {
 	unsigned int i, k = 0, metaCount = 0, udtaCount = 0, xyzCount = 0;
 
-	for (i = 0; i < demux->metaMetadataCount; i++) {
-		if ((demux->metaMetadataValue[i]) &&
-			(strlen(demux->metaMetadataValue[i]) > 0) &&
-			(demux->metaMetadataKey[i]) &&
-			(strlen(demux->metaMetadataKey[i]) > 0))
+	for (i = 0; i < mp4->metaMetadataCount; i++) {
+		if ((mp4->metaMetadataValue[i]) &&
+			(strlen(mp4->metaMetadataValue[i]) > 0) &&
+			(mp4->metaMetadataKey[i]) &&
+			(strlen(mp4->metaMetadataKey[i]) > 0))
 			metaCount++;
 	}
 
-	for (i = 0; i < demux->udtaMetadataCount; i++) {
-		if ((demux->udtaMetadataValue[i]) &&
-			(strlen(demux->udtaMetadataValue[i]) > 0) &&
-			(demux->udtaMetadataKey[i]) &&
-			(strlen(demux->udtaMetadataKey[i]) > 0))
+	for (i = 0; i < mp4->udtaMetadataCount; i++) {
+		if ((mp4->udtaMetadataValue[i]) &&
+			(strlen(mp4->udtaMetadataValue[i]) > 0) &&
+			(mp4->udtaMetadataKey[i]) &&
+			(strlen(mp4->udtaMetadataKey[i]) > 0))
 			udtaCount++;
 	}
 
-	if ((demux->udtaLocationValue) &&
-		(strlen(demux->udtaLocationValue) > 0) &&
-		(demux->udtaLocationKey) &&
-		(strlen(demux->udtaLocationKey) > 0))
+	if ((mp4->udtaLocationValue) &&
+		(strlen(mp4->udtaLocationValue) > 0) &&
+		(mp4->udtaLocationKey) &&
+		(strlen(mp4->udtaLocationKey) > 0))
 		xyzCount++;
 
-	demux->finalMetadataCount = metaCount + udtaCount + xyzCount;
+	mp4->finalMetadataCount = metaCount + udtaCount + xyzCount;
 
-	demux->finalMetadataKey = calloc(
-		demux->finalMetadataCount, sizeof(char *));
-	MP4_RETURN_ERR_IF_FAILED((demux->finalMetadataKey != NULL), -ENOMEM);
+	mp4->finalMetadataKey = calloc(
+		mp4->finalMetadataCount, sizeof(char *));
+	MP4_RETURN_ERR_IF_FAILED((mp4->finalMetadataKey != NULL), -ENOMEM);
 
-	demux->finalMetadataValue = calloc(
-		demux->finalMetadataCount, sizeof(char *));
-	MP4_RETURN_ERR_IF_FAILED((demux->finalMetadataValue != NULL), -ENOMEM);
+	mp4->finalMetadataValue = calloc(
+		mp4->finalMetadataCount, sizeof(char *));
+	MP4_RETURN_ERR_IF_FAILED((mp4->finalMetadataValue != NULL), -ENOMEM);
 
-	for (i = 0; i < demux->metaMetadataCount; i++) {
-		if ((demux->metaMetadataValue[i]) &&
-			(strlen(demux->metaMetadataValue[i]) > 0) &&
-			(demux->metaMetadataKey[i]) &&
-			(strlen(demux->metaMetadataKey[i]) > 0)) {
-			demux->finalMetadataKey[k] =
-				demux->metaMetadataKey[i];
-			demux->finalMetadataValue[k] =
-				demux->metaMetadataValue[i];
+	for (i = 0; i < mp4->metaMetadataCount; i++) {
+		if ((mp4->metaMetadataValue[i]) &&
+			(strlen(mp4->metaMetadataValue[i]) > 0) &&
+			(mp4->metaMetadataKey[i]) &&
+			(strlen(mp4->metaMetadataKey[i]) > 0)) {
+			mp4->finalMetadataKey[k] =
+				mp4->metaMetadataKey[i];
+			mp4->finalMetadataValue[k] =
+				mp4->metaMetadataValue[i];
 			k++;
 		}
 	}
 
-	for (i = 0; i < demux->udtaMetadataCount; i++) {
-		if ((demux->udtaMetadataValue[i]) &&
-			(strlen(demux->udtaMetadataValue[i]) > 0) &&
-			(demux->udtaMetadataKey[i]) &&
-			(strlen(demux->udtaMetadataKey[i]) > 0)) {
-			demux->finalMetadataKey[k] =
-				demux->udtaMetadataKey[i];
-			demux->finalMetadataValue[k] =
-				demux->udtaMetadataValue[i];
+	for (i = 0; i < mp4->udtaMetadataCount; i++) {
+		if ((mp4->udtaMetadataValue[i]) &&
+			(strlen(mp4->udtaMetadataValue[i]) > 0) &&
+			(mp4->udtaMetadataKey[i]) &&
+			(strlen(mp4->udtaMetadataKey[i]) > 0)) {
+			mp4->finalMetadataKey[k] =
+				mp4->udtaMetadataKey[i];
+			mp4->finalMetadataValue[k] =
+				mp4->udtaMetadataValue[i];
 			k++;
 		}
 	}
 
-	if ((demux->udtaLocationValue) &&
-		(strlen(demux->udtaLocationValue) > 0) &&
-		(demux->udtaLocationKey) &&
-		(strlen(demux->udtaLocationKey) > 0)) {
-		demux->finalMetadataKey[k] = demux->udtaLocationKey;
-		demux->finalMetadataValue[k] = demux->udtaLocationValue;
+	if ((mp4->udtaLocationValue) &&
+		(strlen(mp4->udtaLocationValue) > 0) &&
+		(mp4->udtaLocationKey) &&
+		(strlen(mp4->udtaLocationKey) > 0)) {
+		mp4->finalMetadataKey[k] = mp4->udtaLocationKey;
+		mp4->finalMetadataValue[k] = mp4->udtaLocationValue;
 		k++;
 	}
 
-	if (demux->metaCoverSize > 0) {
-		demux->finalCoverSize = demux->metaCoverSize;
-		demux->finalCoverOffset = demux->metaCoverOffset;
-		demux->finalCoverType = demux->metaCoverType;
-	} else if (demux->udtaCoverSize > 0) {
-		demux->finalCoverSize = demux->udtaCoverSize;
-		demux->finalCoverOffset = demux->udtaCoverOffset;
-		demux->finalCoverType = demux->udtaCoverType;
+	if (mp4->metaCoverSize > 0) {
+		mp4->finalCoverSize = mp4->metaCoverSize;
+		mp4->finalCoverOffset = mp4->metaCoverOffset;
+		mp4->finalCoverType = mp4->metaCoverType;
+	} else if (mp4->udtaCoverSize > 0) {
+		mp4->finalCoverSize = mp4->udtaCoverSize;
+		mp4->finalCoverOffset = mp4->udtaCoverOffset;
+		mp4->finalCoverType = mp4->udtaCoverType;
 	}
 
 	return 0;
@@ -131,6 +131,7 @@ struct mp4_demux *mp4_demux_open(
 	int err = 0, ret;
 	off_t retBytes;
 	struct mp4_demux *demux;
+	struct mp4_file *mp4;
 
 	MP4_RETURN_VAL_IF_FAILED(filename != NULL, -EINVAL, NULL);
 	MP4_RETURN_VAL_IF_FAILED(strlen(filename) != 0, -EINVAL, NULL);
@@ -142,53 +143,54 @@ struct mp4_demux *mp4_demux_open(
 		goto error;
 	}
 	memset(demux, 0, sizeof(*demux));
+	mp4 = &demux->mp4;
 
-	demux->file = fopen(filename, "rb");
-	if (demux->file == NULL) {
+	mp4->file = fopen(filename, "rb");
+	if (mp4->file == NULL) {
 		MP4_LOGE("failed to open file '%s'", filename);
 		err = -errno;
 		goto error;
 	}
 
-	ret = fseeko(demux->file, 0, SEEK_END);
+	ret = fseeko(mp4->file, 0, SEEK_END);
 	if (ret != 0) {
 		MP4_LOGE("failed to seek to end of file");
 		err = -errno;
 		goto error;
 	}
-	demux->fileSize = ftello(demux->file);
-	ret = fseeko(demux->file, 0, SEEK_SET);
+	mp4->fileSize = ftello(mp4->file);
+	ret = fseeko(mp4->file, 0, SEEK_SET);
 	if (ret != 0) {
 		MP4_LOGE("failed to seek to beginning of file");
 		err = -errno;
 		goto error;
 	}
 
-	retBytes = mp4_demux_parse_children(
-		demux, &demux->root, demux->fileSize, NULL);
+	retBytes = mp4_box_children_read(
+		mp4, &mp4->root, mp4->fileSize, NULL);
 	if (retBytes < 0) {
-		MP4_LOGE("mp4_demux_parse_children() failed (%" PRIi64 ")",
+		MP4_LOGE("mp4_box_children_read() failed (%" PRIi64 ")",
 			(int64_t)retBytes);
 		err = -EIO;
 		goto error;
 	} else {
-		demux->readBytes += retBytes;
+		mp4->readBytes += retBytes;
 	}
 
-	ret = mp4_demux_build_tracks(demux);
+	ret = mp4_tracks_build(mp4);
 	if (ret < 0) {
-		MP4_LOGE("mp4_demux_build_tracks() failed (%d)", ret);
+		MP4_LOGE("mp4_tracks_build() failed (%d)", ret);
 		err = -EIO;
 		goto error;
 	}
-	ret = mp4_demux_build_metadata(demux);
+	ret = mp4_metadata_build(mp4);
 	if (ret < 0) {
-		MP4_LOGE("mp4_demux_build_metadata() failed (%d)", ret);
+		MP4_LOGE("mp4_metadata_build() failed (%d)", ret);
 		err = -EIO;
 		goto error;
 	}
 
-	mp4_demux_print_children(demux, &demux->root, 0);
+	mp4_box_log(mp4, &mp4->root, 0);
 
 	return demux;
 
@@ -207,29 +209,30 @@ int mp4_demux_close(
 	MP4_RETURN_ERR_IF_FAILED(demux != NULL, -EINVAL);
 
 	if (demux) {
-		if (demux->file)
-			fclose(demux->file);
-		mp4_demux_free_children(demux, &demux->root);
-		mp4_demux_free_tracks(demux);
+		struct mp4_file *mp4 = &demux->mp4;
+		if (mp4->file)
+			fclose(mp4->file);
+		mp4_box_free(mp4, &mp4->root);
+		mp4_tracks_free(mp4);
 		unsigned int i;
-		for (i = 0; i < demux->chaptersCount; i++)
-			free(demux->chaptersName[i]);
-		free(demux->udtaLocationKey);
-		free(demux->udtaLocationValue);
-		for (i = 0; i < demux->udtaMetadataCount; i++) {
-			free(demux->udtaMetadataKey[i]);
-			free(demux->udtaMetadataValue[i]);
+		for (i = 0; i < mp4->chaptersCount; i++)
+			free(mp4->chaptersName[i]);
+		free(mp4->udtaLocationKey);
+		free(mp4->udtaLocationValue);
+		for (i = 0; i < mp4->udtaMetadataCount; i++) {
+			free(mp4->udtaMetadataKey[i]);
+			free(mp4->udtaMetadataValue[i]);
 		}
-		free(demux->udtaMetadataKey);
-		free(demux->udtaMetadataValue);
-		for (i = 0; i < demux->metaMetadataCount; i++) {
-			free(demux->metaMetadataKey[i]);
-			free(demux->metaMetadataValue[i]);
+		free(mp4->udtaMetadataKey);
+		free(mp4->udtaMetadataValue);
+		for (i = 0; i < mp4->metaMetadataCount; i++) {
+			free(mp4->metaMetadataKey[i]);
+			free(mp4->metaMetadataValue[i]);
 		}
-		free(demux->metaMetadataKey);
-		free(demux->metaMetadataValue);
-		free(demux->finalMetadataKey);
-		free(demux->finalMetadataValue);
+		free(mp4->metaMetadataKey);
+		free(mp4->metaMetadataValue);
+		free(mp4->finalMetadataKey);
+		free(mp4->finalMetadataValue);
 	}
 
 	free(demux);
@@ -244,10 +247,13 @@ int mp4_demux_seek(
 	int sync)
 {
 	struct mp4_track *tk = NULL;
+	struct mp4_file *mp4;
 
 	MP4_RETURN_ERR_IF_FAILED(demux != NULL, -EINVAL);
 
-	for (tk = demux->track; tk; tk = tk->next) {
+	mp4 = &demux->mp4;
+
+	for (tk = mp4->track; tk; tk = tk->next) {
 		if (tk->type == MP4_TRACK_TYPE_CHAPTERS)
 			continue;
 		if ((tk->type == MP4_TRACK_TYPE_METADATA) && (tk->ref))
@@ -268,8 +274,8 @@ int mp4_demux_seek(
 		for (i = start; i >= 0; i--) {
 			if (tk->sampleDecodingTime[i] <= ts) {
 				int isSync, prevSync = -1;
-				isSync = mp4_demux_is_sync_sample(
-					demux, tk, i, &prevSync);
+				isSync = mp4_track_is_sync_sample(
+					tk, i, &prevSync);
 				if ((isSync) || (!sync)) {
 					start = i;
 					found = 1;
@@ -313,19 +319,23 @@ int mp4_demux_get_media_info(
 	struct mp4_demux *demux,
 	struct mp4_media_info *media_info)
 {
+	struct mp4_file *mp4;
+
 	MP4_RETURN_ERR_IF_FAILED(demux != NULL, -EINVAL);
 	MP4_RETURN_ERR_IF_FAILED(media_info != NULL, -EINVAL);
+
+	mp4 = &demux->mp4;
 
 	memset(media_info, 0, sizeof(*media_info));
 
 	media_info->duration =
-		(demux->duration * 1000000 + demux->timescale / 2) /
-		demux->timescale;
+		(mp4->duration * 1000000 + mp4->timescale / 2) /
+		mp4->timescale;
 	media_info->creation_time =
-		demux->creationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET;
+		mp4->creationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET;
 	media_info->modification_time =
-		demux->creationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET;
-	media_info->track_count = demux->trackCount;
+		mp4->creationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET;
+	media_info->track_count = mp4->trackCount;
 
 	return 0;
 }
@@ -336,7 +346,7 @@ int mp4_demux_get_track_count(
 {
 	MP4_RETURN_ERR_IF_FAILED(demux != NULL, -EINVAL);
 
-	return demux->trackCount;
+	return demux->mp4.trackCount;
 }
 
 
@@ -345,16 +355,20 @@ int mp4_demux_get_track_info(
 	unsigned int track_idx,
 	struct mp4_track_info *track_info)
 {
+	struct mp4_file *mp4;
 	struct mp4_track *tk = NULL;
 	unsigned int k;
 
 	MP4_RETURN_ERR_IF_FAILED(demux != NULL, -EINVAL);
 	MP4_RETURN_ERR_IF_FAILED(track_info != NULL, -EINVAL);
-	MP4_RETURN_ERR_IF_FAILED(track_idx < demux->trackCount, -EINVAL);
+
+	mp4 = &demux->mp4;
+
+	MP4_RETURN_ERR_IF_FAILED(track_idx < mp4->trackCount, -EINVAL);
 
 	memset(track_info, 0, sizeof(*track_info));
 
-	for (tk = demux->track, k = 0; (tk) && (k < track_idx);
+	for (tk = mp4->track, k = 0; (tk) && (k < track_idx);
 		tk = tk->next, k++)
 		;
 
@@ -418,7 +432,7 @@ int mp4_demux_get_track_avc_decoder_config(
 	MP4_RETURN_ERR_IF_FAILED(pps != NULL, -EINVAL);
 	MP4_RETURN_ERR_IF_FAILED(pps_size != NULL, -EINVAL);
 
-	for (tk = demux->track; tk; tk = tk->next) {
+	for (tk = demux->mp4.track; tk; tk = tk->next) {
 		if (tk->id == track_id) {
 			found = 1;
 			break;
@@ -452,15 +466,18 @@ int mp4_demux_get_track_next_sample(
 	unsigned int metadata_buffer_size,
 	struct mp4_track_sample *track_sample)
 {
+	struct mp4_file *mp4;
 	struct mp4_track *tk = NULL;
 	int found = 0;
 
 	MP4_RETURN_ERR_IF_FAILED(demux != NULL, -EINVAL);
 	MP4_RETURN_ERR_IF_FAILED(track_sample != NULL, -EINVAL);
 
+	mp4 = &demux->mp4;
+
 	memset(track_sample, 0, sizeof(*track_sample));
 
-	for (tk = demux->track; tk; tk = tk->next) {
+	for (tk = mp4->track; tk; tk = tk->next) {
 		if (tk->id == track_id) {
 			found = 1;
 			break;
@@ -477,7 +494,7 @@ int mp4_demux_get_track_next_sample(
 		if ((sample_buffer) &&
 			(tk->sampleSize[tk->nextSample] <=
 			sample_buffer_size)) {
-			int _ret = fseeko(demux->file,
+			int _ret = fseeko(mp4->file,
 				tk->sampleOffset[tk->nextSample], SEEK_SET);
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(_ret == 0, -errno,
 				"failed to seek %" PRIu64
@@ -485,7 +502,7 @@ int mp4_demux_get_track_next_sample(
 				tk->sampleOffset[tk->nextSample]);
 			size_t count = fread(sample_buffer,
 				tk->sampleSize[tk->nextSample],
-				1, demux->file);
+				1, mp4->file);
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -EIO,
 				"failed to read %d bytes from file",
 				tk->sampleSize[tk->nextSample]);
@@ -503,7 +520,7 @@ int mp4_demux_get_track_next_sample(
 			if ((metadata_buffer) &&
 				(metatk->sampleSize[tk->nextSample] <=
 				metadata_buffer_size)) {
-				int _ret = fseeko(demux->file,
+				int _ret = fseeko(mp4->file,
 					metatk->sampleOffset[tk->nextSample],
 					SEEK_SET);
 				MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
@@ -514,7 +531,7 @@ int mp4_demux_get_track_next_sample(
 						tk->nextSample]);
 				size_t count = fread(metadata_buffer,
 					metatk->sampleSize[tk->nextSample],
-					1, demux->file);
+					1, mp4->file);
 				MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
 					(count == 1), -EIO,
 					"failed to read %d bytes from file",
@@ -545,13 +562,16 @@ int mp4_demux_seek_to_track_prev_sample(
 	struct mp4_demux *demux,
 	unsigned int track_id)
 {
+	struct mp4_file *mp4;
 	struct mp4_track *tk = NULL;
 	int found = 0, idx;
 	uint64_t ts;
 
 	MP4_RETURN_ERR_IF_FAILED(demux != NULL, -EINVAL);
 
-	for (tk = demux->track; tk; tk = tk->next) {
+	mp4 = &demux->mp4;
+
+	for (tk = mp4->track; tk; tk = tk->next) {
 		if (tk->id == track_id) {
 			found = 1;
 			break;
@@ -582,9 +602,9 @@ int mp4_demux_get_chapters(
 	MP4_RETURN_ERR_IF_FAILED(chaptersTime != NULL, -EINVAL);
 	MP4_RETURN_ERR_IF_FAILED(chaptersName != NULL, -EINVAL);
 
-	*chaptersCount = demux->chaptersCount;
-	*chaptersTime = demux->chaptersTime;
-	*chaptersName = demux->chaptersName;
+	*chaptersCount = demux->mp4.chaptersCount;
+	*chaptersTime = demux->mp4.chaptersTime;
+	*chaptersName = demux->mp4.chaptersName;
 
 	return 0;
 }
@@ -601,9 +621,9 @@ int mp4_demux_get_metadata_strings(
 	MP4_RETURN_ERR_IF_FAILED(keys != NULL, -EINVAL);
 	MP4_RETURN_ERR_IF_FAILED(values != NULL, -EINVAL);
 
-	*count = demux->finalMetadataCount;
-	*keys = demux->finalMetadataKey;
-	*values = demux->finalMetadataValue;
+	*count = demux->mp4.finalMetadataCount;
+	*keys = demux->mp4.finalMetadataKey;
+	*values = demux->mp4.finalMetadataValue;
 
 	return 0;
 }
@@ -616,30 +636,34 @@ int mp4_demux_get_metadata_cover(
 	unsigned int *cover_size,
 	enum mp4_metadata_cover_type *cover_type)
 {
+	struct mp4_file *mp4;
+
 	MP4_RETURN_ERR_IF_FAILED(demux != NULL, -EINVAL);
 
-	if (demux->finalCoverSize > 0) {
+	mp4 = &demux->mp4;
+
+	if (mp4->finalCoverSize > 0) {
 		if (cover_size)
-			*cover_size = demux->finalCoverSize;
+			*cover_size = mp4->finalCoverSize;
 		if (cover_type)
-			*cover_type = demux->finalCoverType;
+			*cover_type = mp4->finalCoverType;
 		if ((cover_buffer) &&
-			(demux->finalCoverSize <= cover_buffer_size)) {
-			int _ret = fseeko(demux->file,
-				demux->finalCoverOffset, SEEK_SET);
+			(mp4->finalCoverSize <= cover_buffer_size)) {
+			int _ret = fseeko(mp4->file,
+				mp4->finalCoverOffset, SEEK_SET);
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(_ret == 0, -errno,
 				"failed to seek %" PRIi64
 				" bytes forward in file",
-				(int64_t)demux->finalCoverOffset);
+				(int64_t)mp4->finalCoverOffset);
 			size_t count = fread(cover_buffer,
-				demux->finalCoverSize, 1, demux->file);
+				mp4->finalCoverSize, 1, mp4->file);
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -EIO,
 				"failed to read %" PRIu32 " bytes from file",
-				demux->finalCoverSize);
+				mp4->finalCoverSize);
 		} else if (cover_buffer) {
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(1, -ENOBUFS,
 				"buffer too small (%d bytes, %d needed)",
-				cover_buffer_size, demux->finalCoverSize);
+				cover_buffer_size, mp4->finalCoverSize);
 		}
 	} else {
 		*cover_size = 0;
