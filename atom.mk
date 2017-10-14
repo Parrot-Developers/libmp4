@@ -10,8 +10,10 @@ LOCAL_MODULE := libmp4
 LOCAL_DESCRIPTION := MP4 file library
 LOCAL_CATEGORY_PATH := libs
 LOCAL_SRC_FILES := \
-    src/mp4_demux.c \
-    src/mp4_log.c
+	src/mp4_box.c \
+	src/mp4_track.c \
+	src/mp4_demux.c \
+	src/mp4_log.c
 LOCAL_EXPORT_C_INCLUDES := $(LOCAL_PATH)/include
 LOCAL_CONDITIONAL_LIBRARIES := OPTIONAL:libulog
 
