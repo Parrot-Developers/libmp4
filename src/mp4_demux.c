@@ -209,7 +209,7 @@ error:
 	if (demux)
 		mp4_demux_close(demux);
 
-	MP4_RETURN_VAL_IF_FAILED(1, err, NULL);
+	MP4_RETURN_VAL_IF_FAILED(0, err, NULL);
 	return NULL;
 }
 
@@ -317,7 +317,7 @@ int mp4_demux_seek(
 				MP4_LOGW("failed to sync metadata"
 					" with ref track");
 		} else {
-			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(1, -ENOENT,
+			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(0, -ENOENT,
 				"unable to seek in track");
 		}
 	}
@@ -422,7 +422,7 @@ int mp4_demux_get_track_info(
 				(float)tk->audioSampleRate / 65536.;
 		}
 	} else {
-		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(1, -ENOENT,
+		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(0, -ENOENT,
 			"track not found");
 	}
 
@@ -457,7 +457,7 @@ int mp4_demux_get_track_avc_decoder_config(
 	}
 
 	if (!tk) {
-		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(1, -ENOENT,
+		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(0, -ENOENT,
 			"track not found");
 	}
 
@@ -501,7 +501,7 @@ int mp4_demux_get_track_next_sample(
 	}
 
 	if (!tk) {
-		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(1, -ENOENT,
+		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(0, -ENOENT,
 			"track not found");
 	}
 
@@ -523,7 +523,7 @@ int mp4_demux_get_track_next_sample(
 				"failed to read %d bytes from file",
 				tk->sampleSize[tk->nextSample]);
 		} else if (sample_buffer) {
-			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(1, -ENOBUFS,
+			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(0, -ENOBUFS,
 				"buffer too small (%d bytes, %d needed)",
 				sample_buffer_size,
 				tk->sampleSize[tk->nextSample]);
@@ -595,7 +595,7 @@ int mp4_demux_seek_to_track_prev_sample(
 	}
 
 	if (!tk) {
-		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(1, -ENOENT,
+		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(0, -ENOENT,
 			"track not found");
 	}
 
@@ -677,7 +677,7 @@ int mp4_demux_get_metadata_cover(
 				"failed to read %" PRIu32 " bytes from file",
 				mp4->finalCoverSize);
 		} else if (cover_buffer) {
-			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(1, -ENOBUFS,
+			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(0, -ENOBUFS,
 				"buffer too small (%d bytes, %d needed)",
 				cover_buffer_size, mp4->finalCoverSize);
 		}
