@@ -508,6 +508,7 @@ int mp4_demux_get_track_next_sample(
 	if (tk->nextSample < tk->sampleCount) {
 		track_sample->sample_size = tk->sampleSize[tk->nextSample];
 		if ((sample_buffer) &&
+			(tk->sampleSize[tk->nextSample] > 0) &&
 			(tk->sampleSize[tk->nextSample] <=
 			sample_buffer_size)) {
 			int _ret = fseeko(mp4->file,
@@ -522,7 +523,8 @@ int mp4_demux_get_track_next_sample(
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -EIO,
 				"failed to read %d bytes from file",
 				tk->sampleSize[tk->nextSample]);
-		} else if (sample_buffer) {
+		} else if ((sample_buffer) &&
+			(tk->sampleSize[tk->nextSample] > sample_buffer_size)) {
 			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(0, -ENOBUFS,
 				"buffer too small (%d bytes, %d needed)",
 				sample_buffer_size,
@@ -534,6 +536,7 @@ int mp4_demux_get_track_next_sample(
 			track_sample->metadata_size =
 				metatk->sampleSize[tk->nextSample];
 			if ((metadata_buffer) &&
+				(metatk->sampleSize[tk->nextSample] > 0) &&
 				(metatk->sampleSize[tk->nextSample] <=
 				metadata_buffer_size)) {
 				int _ret = fseeko(mp4->file,
@@ -551,6 +554,15 @@ int mp4_demux_get_track_next_sample(
 				MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
 					(count == 1), -EIO,
 					"failed to read %d bytes from file",
+					metatk->sampleSize[tk->nextSample]);
+			} else if ((metadata_buffer) &&
+				(metatk->sampleSize[tk->nextSample] >
+				metadata_buffer_size)) {
+				MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(0,
+					-ENOBUFS,
+					"buffer too small for metadata "
+					"(%d bytes, %d needed)",
+					metadata_buffer_size,
 					metatk->sampleSize[tk->nextSample]);
 			}
 		}
