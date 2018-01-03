@@ -292,6 +292,22 @@ struct mp4_demux {
 	} while (0)
 
 
+static inline uint64_t mp4_usec_to_sample_time(
+	uint64_t time,
+	uint32_t timescale)
+{
+	return (time * timescale + 500000) / 1000000;
+}
+
+
+static inline uint64_t mp4_sample_time_to_usec(
+	uint64_t time,
+	uint32_t timescale)
+{
+	return (time * 1000000 + timescale / 2) / timescale;
+}
+
+
 struct mp4_box *mp4_box_new(
 	struct mp4_box *parent);
 

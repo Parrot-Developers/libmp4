@@ -271,7 +271,8 @@ int mp4_demux_seek(
 			continue;
 
 		int found = 0, i;
-		uint64_t ts = (time_offset * tk->timescale + 500000) / 1000000;
+		uint64_t ts = mp4_usec_to_sample_time(time_offset,
+			tk->timescale);
 		uint64_t newPendingSeekTime = 0;
 		int start = (unsigned int)(((uint64_t)tk->sampleCount * ts
 				+ tk->duration - 1) / tk->duration);
@@ -306,8 +307,9 @@ int mp4_demux_seek(
 			MP4_LOGI("seek to %" PRIu64
 				" -> sample #%d time %" PRIu64,
 				time_offset, start,
-				(tk->sampleDecodingTime[start] * 1000000 +
-				tk->timescale / 2) / tk->timescale);
+				mp4_sample_time_to_usec(
+					tk->sampleDecodingTime[start],
+					tk->timescale));
 			if ((tk->metadata) &&
 				((unsigned)start < tk->metadata->sampleCount) &&
 				(tk->sampleDecodingTime[start] ==
@@ -339,9 +341,8 @@ int mp4_demux_get_media_info(
 
 	memset(media_info, 0, sizeof(*media_info));
 
-	media_info->duration =
-		(mp4->duration * 1000000 + mp4->timescale / 2) /
-		mp4->timescale;
+	media_info->duration = mp4_sample_time_to_usec(
+		mp4->duration, mp4->timescale);
 	media_info->creation_time =
 		mp4->creationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET;
 	media_info->modification_time =
@@ -383,8 +384,8 @@ int mp4_demux_get_track_info(
 	memset(track_info, 0, sizeof(*track_info));
 	track_info->id = tk->id;
 	track_info->type = tk->type;
-	track_info->duration =
-		(tk->duration * 1000000 + tk->timescale / 2) / tk->timescale;
+	track_info->duration = mp4_sample_time_to_usec(
+		tk->duration, tk->timescale);
 	track_info->creation_time =
 		tk->creationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET;
 	track_info->modification_time =
@@ -544,13 +545,13 @@ int mp4_demux_get_track_next_sample(
 		if (tk->sampleDecodingTime[tk->nextSample] >=
 			tk->pendingSeekTime)
 			tk->pendingSeekTime = 0;
-		track_sample->sample_dts =
-			(tk->sampleDecodingTime[tk->nextSample] * 1000000 +
-			tk->timescale / 2) / tk->timescale;
+		track_sample->sample_dts = mp4_sample_time_to_usec(
+			tk->sampleDecodingTime[tk->nextSample], tk->timescale);
 		track_sample->next_sample_dts =
 			(tk->nextSample < tk->sampleCount - 1) ?
-			(tk->sampleDecodingTime[tk->nextSample + 1] *
-			1000000 + tk->timescale / 2) / tk->timescale : 0;
+			mp4_sample_time_to_usec(
+				tk->sampleDecodingTime[tk->nextSample + 1],
+				tk->timescale) : 0;
 		tk->nextSample++;
 	}
 
@@ -576,8 +577,8 @@ int mp4_demux_seek_to_track_prev_sample(
 		"track not found");
 
 	idx = (tk->nextSample >= 2) ? tk->nextSample - 2 : 0;
-	ts = (tk->sampleDecodingTime[idx] * 1000000 + tk->timescale / 2) /
-		tk->timescale;
+	ts = mp4_sample_time_to_usec(tk->sampleDecodingTime[idx],
+		tk->timescale);
 
 	return mp4_demux_seek(demux, ts, 1);
 }

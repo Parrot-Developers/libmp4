@@ -385,10 +385,9 @@ int mp4_tracks_build(
 					sz);
 				readBytes += sz;
 				chapName[sz] = '\0';
-				uint64_t chapTime =
-					(chapTk->sampleDecodingTime[i] *
-					1000000 + chapTk->timescale / 2) /
-					chapTk->timescale;
+				uint64_t chapTime = mp4_sample_time_to_usec(
+					chapTk->sampleDecodingTime[i],
+					chapTk->timescale);
 				MP4_LOGD("chapter #%d time=%" PRIu64 " '%s'",
 					mp4->chaptersCount + 1,
 					chapTime, chapName);
