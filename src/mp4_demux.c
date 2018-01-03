@@ -367,8 +367,7 @@ int mp4_demux_get_track_info(
 	struct mp4_track_info *track_info)
 {
 	struct mp4_file *mp4;
-	struct mp4_track *track = NULL, *tk = NULL;
-	unsigned int k = 0;
+	struct mp4_track *tk = NULL;
 
 	MP4_RETURN_ERR_IF_FAILED(demux != NULL, -EINVAL);
 	MP4_RETURN_ERR_IF_FAILED(track_info != NULL, -EINVAL);
@@ -377,53 +376,42 @@ int mp4_demux_get_track_info(
 
 	MP4_RETURN_ERR_IF_FAILED(track_idx < mp4->trackCount, -EINVAL);
 
+	tk = mp4_track_find_by_idx(mp4, track_idx);
+	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(tk != NULL, -ENOENT,
+		"track not found");
+
 	memset(track_info, 0, sizeof(*track_info));
-
-	list_walk_entry_forward(&mp4->tracks, track, node) {
-		if (k == track_idx) {
-			tk = track;
-			break;
-		}
-		k++;
+	track_info->id = tk->id;
+	track_info->type = tk->type;
+	track_info->duration =
+		(tk->duration * 1000000 + tk->timescale / 2) / tk->timescale;
+	track_info->creation_time =
+		tk->creationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET;
+	track_info->modification_time =
+		tk->creationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET;
+	track_info->sample_count = tk->sampleCount;
+	track_info->has_metadata = (tk->metadata) ? 1 : 0;
+	if (tk->metadata) {
+		track_info->metadata_content_encoding =
+			tk->metadata->metadataContentEncoding;
+		track_info->metadata_mime_format =
+			tk->metadata->metadataMimeFormat;
+	} else if (tk->type == MP4_TRACK_TYPE_METADATA) {
+		track_info->metadata_content_encoding =
+			tk->metadataContentEncoding;
+		track_info->metadata_mime_format =
+			tk->metadataMimeFormat;
 	}
-
-	if (tk) {
-		track_info->id = tk->id;
-		track_info->type = tk->type;
-		track_info->duration =
-			(tk->duration * 1000000 + tk->timescale / 2) /
-			tk->timescale;
-		track_info->creation_time =
-			tk->creationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET;
-		track_info->modification_time =
-			tk->creationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET;
-		track_info->sample_count = tk->sampleCount;
-		track_info->has_metadata = (tk->metadata) ? 1 : 0;
-		if (tk->metadata) {
-			track_info->metadata_content_encoding =
-				tk->metadata->metadataContentEncoding;
-			track_info->metadata_mime_format =
-				tk->metadata->metadataMimeFormat;
-		} else if (tk->type == MP4_TRACK_TYPE_METADATA) {
-			track_info->metadata_content_encoding =
-				tk->metadataContentEncoding;
-			track_info->metadata_mime_format =
-				tk->metadataMimeFormat;
-		}
-		if (tk->type == MP4_TRACK_TYPE_VIDEO) {
-			track_info->video_codec = tk->videoCodec;
-			track_info->video_width = tk->videoWidth;
-			track_info->video_height = tk->videoHeight;
-		} else if (tk->type == MP4_TRACK_TYPE_AUDIO) {
-			track_info->audio_codec = tk->audioCodec;
-			track_info->audio_channel_count = tk->audioChannelCount;
-			track_info->audio_sample_size = tk->audioSampleSize;
-			track_info->audio_sample_rate =
-				(float)tk->audioSampleRate / 65536.;
-		}
-	} else {
-		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(0, -ENOENT,
-			"track not found");
+	if (tk->type == MP4_TRACK_TYPE_VIDEO) {
+		track_info->video_codec = tk->videoCodec;
+		track_info->video_width = tk->videoWidth;
+		track_info->video_height = tk->videoHeight;
+	} else if (tk->type == MP4_TRACK_TYPE_AUDIO) {
+		track_info->audio_codec = tk->audioCodec;
+		track_info->audio_channel_count = tk->audioChannelCount;
+		track_info->audio_sample_size = tk->audioSampleSize;
+		track_info->audio_sample_rate =
+			(float)tk->audioSampleRate / 65536.;
 	}
 
 	return 0;
@@ -439,7 +427,7 @@ int mp4_demux_get_track_avc_decoder_config(
 	unsigned int *pps_size)
 {
 	struct mp4_file *mp4;
-	struct mp4_track *track = NULL, *tk = NULL;
+	struct mp4_track *tk = NULL;
 
 	MP4_RETURN_ERR_IF_FAILED(demux != NULL, -EINVAL);
 	MP4_RETURN_ERR_IF_FAILED(sps != NULL, -EINVAL);
@@ -449,17 +437,9 @@ int mp4_demux_get_track_avc_decoder_config(
 
 	mp4 = &demux->mp4;
 
-	list_walk_entry_forward(&mp4->tracks, track, node) {
-		if (track->id == track_id) {
-			tk = track;
-			break;
-		}
-	}
-
-	if (!tk) {
-		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(0, -ENOENT,
-			"track not found");
-	}
+	tk = mp4_track_find_by_id(mp4, track_id);
+	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(tk != NULL, -ENOENT,
+		"track not found");
 
 	if (tk->videoSps) {
 		*sps = tk->videoSps;
@@ -484,26 +464,18 @@ int mp4_demux_get_track_next_sample(
 	struct mp4_track_sample *track_sample)
 {
 	struct mp4_file *mp4;
-	struct mp4_track *track = NULL, *tk = NULL;
+	struct mp4_track *tk = NULL;
 
 	MP4_RETURN_ERR_IF_FAILED(demux != NULL, -EINVAL);
 	MP4_RETURN_ERR_IF_FAILED(track_sample != NULL, -EINVAL);
 
 	mp4 = &demux->mp4;
 
+	tk = mp4_track_find_by_id(mp4, track_id);
+	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(tk != NULL, -ENOENT,
+		"track not found");
+
 	memset(track_sample, 0, sizeof(*track_sample));
-
-	list_walk_entry_forward(&mp4->tracks, track, node) {
-		if (track->id == track_id) {
-			tk = track;
-			break;
-		}
-	}
-
-	if (!tk) {
-		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(0, -ENOENT,
-			"track not found");
-	}
 
 	if (tk->nextSample < tk->sampleCount) {
 		track_sample->sample_size = tk->sampleSize[tk->nextSample];
@@ -591,7 +563,7 @@ int mp4_demux_seek_to_track_prev_sample(
 	unsigned int track_id)
 {
 	struct mp4_file *mp4;
-	struct mp4_track *track = NULL, *tk = NULL;
+	struct mp4_track *tk = NULL;
 	int idx;
 	uint64_t ts;
 
@@ -599,17 +571,9 @@ int mp4_demux_seek_to_track_prev_sample(
 
 	mp4 = &demux->mp4;
 
-	list_walk_entry_forward(&mp4->tracks, track, node) {
-		if (track->id == track_id) {
-			tk = track;
-			break;
-		}
-	}
-
-	if (!tk) {
-		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(0, -ENOENT,
-			"track not found");
-	}
+	tk = mp4_track_find_by_id(mp4, track_id);
+	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(tk != NULL, -ENOENT,
+		"track not found");
 
 	idx = (tk->nextSample >= 2) ? tk->nextSample - 2 : 0;
 	ts = (tk->sampleDecodingTime[idx] * 1000000 + tk->timescale / 2) /

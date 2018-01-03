@@ -336,6 +336,21 @@ int mp4_track_remove(
 	struct mp4_track *track);
 
 
+struct mp4_track *mp4_track_find(
+	struct mp4_file *mp4,
+	struct mp4_track *track);
+
+
+struct mp4_track *mp4_track_find_by_idx(
+	struct mp4_file *mp4,
+	unsigned int track_idx);
+
+
+struct mp4_track *mp4_track_find_by_id(
+	struct mp4_file *mp4,
+	unsigned int track_id);
+
+
 void mp4_tracks_destroy(
 	struct mp4_file *mp4);
 

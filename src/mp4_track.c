@@ -119,28 +119,86 @@ int mp4_track_remove(
 	struct mp4_file *mp4,
 	struct mp4_track *track)
 {
+	struct mp4_track *_track = NULL;
+
 	MP4_RETURN_ERR_IF_FAILED(mp4 != NULL, -EINVAL);
 	MP4_RETURN_ERR_IF_FAILED(track != NULL, -EINVAL);
 
-	int found = 0;
-	struct mp4_track *_track = NULL;
-	list_walk_entry_forward(&mp4->tracks, _track, node) {
-		if (_track == track) {
-			found = 1;
-			break;
-		}
-	}
-
-	if (!found) {
-		MP4_LOGE("failed to find the track in the list");
-		return -EINVAL;
-	}
+	_track = mp4_track_find(mp4, track);
+	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(_track != track, -ENOENT,
+		"track not found");
 
 	/* remove from the list */
 	list_del(&track->node);
 	mp4->trackCount--;
 
 	return mp4_track_destroy(track);
+}
+
+
+struct mp4_track *mp4_track_find(
+	struct mp4_file *mp4,
+	struct mp4_track *track)
+{
+	struct mp4_track *_track = NULL;
+	int found = 0;
+
+	MP4_RETURN_VAL_IF_FAILED(mp4 != NULL, -EINVAL, NULL);
+	MP4_RETURN_VAL_IF_FAILED(track != NULL, -EINVAL, NULL);
+
+	list_walk_entry_forward(&mp4->tracks, _track, node) {
+		if (_track == track) {
+			found = 1;
+			break;
+		}
+	}
+	MP4_RETURN_VAL_IF_FAILED(found, -EINVAL, NULL);
+
+	return _track;
+}
+
+
+struct mp4_track *mp4_track_find_by_idx(
+	struct mp4_file *mp4,
+	unsigned int track_idx)
+{
+	struct mp4_track *_track = NULL;
+	int found = 0;
+	unsigned int k = 0;
+
+	MP4_RETURN_VAL_IF_FAILED(mp4 != NULL, -EINVAL, NULL);
+
+	list_walk_entry_forward(&mp4->tracks, _track, node) {
+		if (k == track_idx) {
+			found = 1;
+			break;
+		}
+		k++;
+	}
+	MP4_RETURN_VAL_IF_FAILED(found, -EINVAL, NULL);
+
+	return _track;
+}
+
+
+struct mp4_track *mp4_track_find_by_id(
+	struct mp4_file *mp4,
+	unsigned int track_id)
+{
+	struct mp4_track *_track = NULL;
+	int found = 0;
+
+	MP4_RETURN_VAL_IF_FAILED(mp4 != NULL, -EINVAL, NULL);
+
+	list_walk_entry_forward(&mp4->tracks, _track, node) {
+		if (_track->id == track_id) {
+			found = 1;
+			break;
+		}
+	}
+	MP4_RETURN_VAL_IF_FAILED(found, -EINVAL, NULL);
+
+	return _track;
 }
 
 
@@ -268,13 +326,8 @@ int mp4_tracks_build(
 
 		/* link tracks using track references */
 		if ((tk->referenceType != 0) && (tk->referenceTrackId)) {
-			struct mp4_track *t = NULL, *tkRef = NULL;
-			list_walk_entry_forward(&mp4->tracks, t, node) {
-				if (t->id == tk->referenceTrackId) {
-					tkRef = t;
-					break;
-				}
-			}
+			struct mp4_track *tkRef;
+			tkRef = mp4_track_find_by_id(mp4, tk->referenceTrackId);
 			if (tkRef) {
 				if ((tk->referenceType ==
 					MP4_REFERENCE_TYPE_DESCRIPTION)
