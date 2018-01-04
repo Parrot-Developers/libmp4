@@ -118,6 +118,8 @@ struct mp4_track_sample {
 	int silent;
 	uint64_t sample_dts;
 	uint64_t next_sample_dts;
+	uint64_t prev_sync_sample_dts;
+	uint64_t next_sync_sample_dts;
 };
 
 
@@ -175,6 +177,25 @@ int mp4_demux_get_track_next_sample(
 int mp4_demux_seek_to_track_prev_sample(
 	struct mp4_demux *demux,
 	unsigned int track_id);
+
+
+uint64_t mp4_demux_get_track_next_sample_time(
+	struct mp4_demux *demux,
+	unsigned int track_id);
+
+
+uint64_t mp4_demux_get_track_prev_sample_time_before(
+	struct mp4_demux *demux,
+	unsigned int track_id,
+	uint64_t time,
+	int sync);
+
+
+uint64_t mp4_demux_get_track_next_sample_time_after(
+	struct mp4_demux *demux,
+	unsigned int track_id,
+	uint64_t time,
+	int sync);
 
 
 int mp4_demux_get_chapters(

@@ -466,6 +466,8 @@ int mp4_demux_get_track_next_sample(
 {
 	struct mp4_file *mp4;
 	struct mp4_track *tk = NULL;
+	int idx;
+	uint64_t sampleTime;
 
 	MP4_RETURN_ERR_IF_FAILED(demux != NULL, -EINVAL);
 	MP4_RETURN_ERR_IF_FAILED(track_sample != NULL, -EINVAL);
@@ -539,19 +541,34 @@ int mp4_demux_get_track_next_sample(
 					metatk->sampleSize[tk->nextSample]);
 			}
 		}
+		sampleTime = tk->sampleDecodingTime[tk->nextSample];
 		track_sample->silent = ((tk->pendingSeekTime) &&
-			(tk->sampleDecodingTime[tk->nextSample] <
-				tk->pendingSeekTime)) ? 1 : 0;
-		if (tk->sampleDecodingTime[tk->nextSample] >=
-			tk->pendingSeekTime)
+			(sampleTime < tk->pendingSeekTime)) ? 1 : 0;
+		if (sampleTime >= tk->pendingSeekTime)
 			tk->pendingSeekTime = 0;
 		track_sample->sample_dts = mp4_sample_time_to_usec(
-			tk->sampleDecodingTime[tk->nextSample], tk->timescale);
+			sampleTime, tk->timescale);
 		track_sample->next_sample_dts =
 			(tk->nextSample < tk->sampleCount - 1) ?
 			mp4_sample_time_to_usec(
 				tk->sampleDecodingTime[tk->nextSample + 1],
 				tk->timescale) : 0;
+		idx = mp4_track_find_sample_by_time(tk, sampleTime,
+			MP4_TIME_CMP_LT, 1, tk->nextSample);
+		if (idx >= 0) {
+			track_sample->prev_sync_sample_dts =
+				mp4_sample_time_to_usec(
+					tk->sampleDecodingTime[idx],
+					tk->timescale);
+		}
+		idx = mp4_track_find_sample_by_time(tk, sampleTime,
+			MP4_TIME_CMP_GT, 1, tk->nextSample);
+		if (idx >= 0) {
+			track_sample->next_sync_sample_dts =
+				mp4_sample_time_to_usec(
+					tk->sampleDecodingTime[idx],
+					tk->timescale);
+		}
 		tk->nextSample++;
 	}
 
@@ -581,6 +598,95 @@ int mp4_demux_seek_to_track_prev_sample(
 		tk->timescale);
 
 	return mp4_demux_seek(demux, ts, 1);
+}
+
+
+uint64_t mp4_demux_get_track_next_sample_time(
+	struct mp4_demux *demux,
+	unsigned int track_id)
+{
+	struct mp4_file *mp4;
+	struct mp4_track *tk = NULL;
+	uint64_t next_ts = 0;
+
+	MP4_RETURN_VAL_IF_FAILED(demux != NULL, -EINVAL, 0);
+
+	mp4 = &demux->mp4;
+
+	tk = mp4_track_find_by_id(mp4, track_id);
+	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(tk != NULL, -ENOENT,
+		"track not found");
+
+	if (tk->nextSample < tk->sampleCount) {
+		next_ts = mp4_sample_time_to_usec(
+			tk->sampleDecodingTime[tk->nextSample], tk->timescale);
+	}
+
+	return next_ts;
+}
+
+
+uint64_t mp4_demux_get_track_prev_sample_time_before(
+	struct mp4_demux *demux,
+	unsigned int track_id,
+	uint64_t time,
+	int sync)
+{
+	struct mp4_file *mp4;
+	struct mp4_track *tk = NULL;
+	int idx;
+	uint64_t ts = 0;
+
+	MP4_RETURN_VAL_IF_FAILED(demux != NULL, -EINVAL, 0);
+
+	mp4 = &demux->mp4;
+
+	tk = mp4_track_find_by_id(mp4, track_id);
+	MP4_LOG_ERR_AND_RETURN_VAL_IF_FAILED(tk != NULL, -ENOENT, 0,
+		"track not found");
+
+	ts = mp4_usec_to_sample_time(time, tk->timescale);
+	idx = mp4_track_find_sample_by_time(tk, ts,
+		MP4_TIME_CMP_LT, sync, -1);
+
+	if (idx >= 0) {
+		return mp4_sample_time_to_usec(
+			tk->sampleDecodingTime[idx], tk->timescale);
+	} else {
+		return 0;
+	}
+}
+
+
+uint64_t mp4_demux_get_track_next_sample_time_after(
+	struct mp4_demux *demux,
+	unsigned int track_id,
+	uint64_t time,
+	int sync)
+{
+	struct mp4_file *mp4;
+	struct mp4_track *tk = NULL;
+	int idx;
+	uint64_t ts = 0;
+
+	MP4_RETURN_VAL_IF_FAILED(demux != NULL, -EINVAL, 0);
+
+	mp4 = &demux->mp4;
+
+	tk = mp4_track_find_by_id(mp4, track_id);
+	MP4_LOG_ERR_AND_RETURN_VAL_IF_FAILED(tk != NULL, -ENOENT, 0,
+		"track not found");
+
+	ts = mp4_usec_to_sample_time(time, tk->timescale);
+	idx = mp4_track_find_sample_by_time(tk, ts,
+		MP4_TIME_CMP_GT, sync, -1);
+
+	if (idx >= 0) {
+		return mp4_sample_time_to_usec(
+			tk->sampleDecodingTime[idx], tk->timescale);
+	} else {
+		return 0;
+	}
 }
 
 
