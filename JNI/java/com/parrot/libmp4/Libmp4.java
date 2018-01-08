@@ -10,9 +10,6 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class Libmp4 implements Closeable {
-    public static final String THERMAL_METADATA_METAVERSION = "com.parrot.thermal.metaversion";
-    public static final String THERMAL_METADATA_ALIGNMENT = "com.parrot.thermal.alignment";
-
     private static final String LIBRARY_NAME = "mp4_android";
     private long demux;
 
