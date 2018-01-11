@@ -131,6 +131,15 @@
 #define MP4_CHAPTERS_MAX (100)
 
 
+enum mp4_time_cmp {
+	MP4_TIME_CMP_EXACT,	/* exact match */
+	MP4_TIME_CMP_LT,	/* less than */
+	MP4_TIME_CMP_GT,	/* greater than */
+	MP4_TIME_CMP_LT_EQ,	/* less than or equal */
+	MP4_TIME_CMP_GT_EQ,	/* greater than or equal */
+};
+
+
 struct mp4_box {
 	uint32_t size;
 	uint32_t type;
@@ -333,6 +342,14 @@ int mp4_track_is_sync_sample(
 	struct mp4_track *track,
 	unsigned int sampleIdx,
 	int *prevSyncSampleIdx);
+
+
+int mp4_track_find_sample_by_time(
+	struct mp4_track *track,
+	uint64_t time,
+	enum mp4_time_cmp cmp,
+	int sync,
+	int start);
 
 
 struct mp4_track *mp4_track_new(

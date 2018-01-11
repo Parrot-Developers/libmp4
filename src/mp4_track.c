@@ -67,6 +67,95 @@ int mp4_track_is_sync_sample(
 }
 
 
+int mp4_track_find_sample_by_time(
+	struct mp4_track *track,
+	uint64_t time,
+	enum mp4_time_cmp cmp,
+	int sync,
+	int start)
+{
+	int i, idx, is_sync, found = 0;
+
+	MP4_RETURN_ERR_IF_FAILED(track != NULL, -EINVAL);
+
+
+	switch (cmp) {
+	case MP4_TIME_CMP_EXACT:
+		if (start < 0)
+			start = 0;
+		if (start >= (int)track->sampleCount)
+			start = (int)track->sampleCount - 1;
+		for (i = start; i < (int)track->sampleCount; i++, is_sync = 0) {
+			if (track->sampleDecodingTime[i] == time) {
+				if (sync) {
+					is_sync = mp4_track_is_sync_sample(
+						track, i, NULL);
+				}
+				if ((!sync) || (is_sync)) {
+					idx = i;
+					found = 1;
+					break;
+				}
+			} else if (track->sampleDecodingTime[i] > time) {
+				break;
+			}
+		}
+		break;
+	case MP4_TIME_CMP_LT:
+	case MP4_TIME_CMP_LT_EQ:
+		if (start < 0)
+			start = (int)track->sampleCount - 1;
+		if (start >= (int)track->sampleCount)
+			start = (int)track->sampleCount - 1;
+		for (i = start; i >= 0; i--, is_sync = 0) {
+			if (((cmp == MP4_TIME_CMP_LT) &&
+				(track->sampleDecodingTime[i] < time)) ||
+				((cmp == MP4_TIME_CMP_LT_EQ) &&
+				(track->sampleDecodingTime[i] <= time))) {
+				if (sync) {
+					is_sync = mp4_track_is_sync_sample(
+						track, i, NULL);
+				}
+				if ((!sync) || (is_sync)) {
+					idx = i;
+					found = 1;
+					break;
+				}
+			}
+		}
+		break;
+	case MP4_TIME_CMP_GT:
+	case MP4_TIME_CMP_GT_EQ:
+		if (start < 0)
+			start = 0;
+		if (start >= (int)track->sampleCount)
+			start = (int)track->sampleCount - 1;
+		for (i = start; i < (int)track->sampleCount; i++, is_sync = 0) {
+			if (((cmp == MP4_TIME_CMP_GT) &&
+				(track->sampleDecodingTime[i] > time)) ||
+				((cmp == MP4_TIME_CMP_GT_EQ) &&
+				(track->sampleDecodingTime[i] >= time))) {
+				if (sync) {
+					is_sync = mp4_track_is_sync_sample(
+						track, i, NULL);
+				}
+				if ((!sync) || (is_sync)) {
+					idx = i;
+					found = 1;
+					break;
+				}
+			}
+		}
+		break;
+	default:
+		MP4_RETURN_ERR_IF_FAILED(0, -EINVAL);
+		break;
+	}
+
+	return (found) ? idx : -ENOENT;
+}
+
+
 struct mp4_track *mp4_track_new(
 	void)
 {
