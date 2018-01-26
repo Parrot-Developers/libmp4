@@ -178,6 +178,7 @@ int mp4_track_destroy(
 	free(track->chunkOffset);
 	free(track->sampleToChunkEntries);
 	free(track->sampleOffset);
+	free(track->syncSampleEntries);
 	free(track->videoSps);
 	free(track->videoPps);
 	free(track->metadataContentEncoding);

@@ -236,6 +236,8 @@ static void mp4_demux_print_metadata(struct mp4_demux *demux)
 			}
 #endif
 		}
+
+		free(cover_buffer);
 	}
 }
 
