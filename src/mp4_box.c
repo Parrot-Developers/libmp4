@@ -2323,3 +2323,50 @@ off_t mp4_box_children_read(
 
 	return (ret < 0) ? ret : parentReadBytes;
 }
+
+
+int mp4_generate_avc_decoder_config(
+	uint8_t *sps,
+	unsigned int sps_size,
+	uint8_t *pps,
+	unsigned int pps_size,
+	uint8_t *avcc,
+	unsigned int *avcc_size)
+{
+	off_t off = 0;
+
+	MP4_RETURN_ERR_IF_FAILED(sps != NULL, -EINVAL);
+	MP4_RETURN_ERR_IF_FAILED(pps != NULL, -EINVAL);
+	MP4_RETURN_ERR_IF_FAILED(avcc != NULL, -EINVAL);
+	MP4_RETURN_ERR_IF_FAILED(sps_size >= 4, -EINVAL);
+	MP4_RETURN_ERR_IF_FAILED(*avcc_size >= (sps_size + pps_size + 11),
+				 -ENOMEM);
+
+	/* configurationVersion = 1, AVCProfileIndication,
+	 * profile_compatibility, AVCLevelIndication */
+	avcc[off++] = 0x01;
+	avcc[off++] = sps[1];
+	avcc[off++] = sps[2];
+	avcc[off++] = sps[3];
+	/* reserved (6 bits), lengthSizeMinusOne = 3 (2 bits),
+	 * reserved (3bits), numOfSequenceParameterSets (5 bits) */
+	avcc[off++] = 0xFF;
+	avcc[off++] = 0xE1;
+	/* sequenceParameterSetLength */
+	avcc[off++] = sps_size >> 8;
+	avcc[off++] = sps_size & 0xFF;
+	/* sequenceParameterSetNALUnit */
+	memcpy(&avcc[off], sps, sps_size);
+	off += sps_size;
+	/* numOfPictureParameterSets */
+	avcc[off++] = 0x01;
+	/* pictureParameterSetLength */
+	avcc[off++] = pps_size >> 8;
+	avcc[off++] = pps_size & 0xFF;
+	/* pictureParameterSetNALUnit */
+	memcpy(&avcc[off], pps, pps_size);
+	off += pps_size;
+
+	*avcc_size = off;
+	return 0;
+}

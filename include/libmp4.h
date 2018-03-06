@@ -220,6 +220,15 @@ int mp4_demux_get_metadata_cover(
 	enum mp4_metadata_cover_type *cover_type);
 
 
+int mp4_generate_avc_decoder_config(
+	uint8_t *sps,
+	unsigned int sps_size,
+	uint8_t *pps,
+	unsigned int pps_size,
+	uint8_t *avcc,
+	unsigned int *avcc_size);
+
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
