@@ -85,6 +85,7 @@
 #define MP4_SAMPLE_TABLE_BOX                0x7374626c /* "stbl" */
 #define MP4_SAMPLE_DESCRIPTION_BOX          0x73747364 /* "stsd" */
 #define MP4_AVC_DECODER_CONFIG_BOX          0x61766343 /* "avcC" */
+#define MP4_AUDIO_DECODER_CONFIG_BOX        0x65736473 /* "esds" */
 #define MP4_DECODING_TIME_TO_SAMPLE_BOX     0x73747473 /* "stts" */
 #define MP4_SYNC_SAMPLE_BOX                 0x73747373 /* "stss" */
 #define MP4_SAMPLE_SIZE_BOX                 0x7374737a /* "stsz" */
@@ -201,6 +202,8 @@ struct mp4_track {
 	uint32_t audioChannelCount;
 	uint32_t audioSampleSize;
 	uint32_t audioSampleRate;
+	uint32_t audioSpecificConfigSize;
+	uint8_t *audioSpecificConfig;
 
 	char *metadataContentEncoding;
 	char *metadataMimeFormat;
@@ -284,6 +287,17 @@ struct mp4_demux {
 			"failed to read %zu bytes from file", \
 			sizeof(uint8_t)); \
 		_readBytes += sizeof(uint8_t); \
+	} while (0)
+
+#define MP4_SKIP_BYTES(_file, _nBytes, _readBytes) \
+	do { \
+		int _ret = fseeko(_file, _nBytes, SEEK_CUR); \
+		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED( \
+			_ret == 0, -errno, \
+			"failed to seek %" PRIi64 \
+			" bytes forward in file", \
+			(int64_t)_nBytes); \
+		_readBytes += _nBytes; \
 	} while (0)
 
 #define MP4_SKIP(_file, _readBytes, _maxBytes) \

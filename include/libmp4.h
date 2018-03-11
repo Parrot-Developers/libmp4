@@ -163,6 +163,12 @@ int mp4_demux_get_track_avc_decoder_config(
 	uint8_t **pps,
 	unsigned int *pps_size);
 
+int mp4_demux_get_track_audio_specific_config(
+	struct mp4_demux *demux,
+	unsigned int track_id,
+	uint8_t **audio_specific_config,
+	unsigned int *asc_size);
+
 
 int mp4_demux_get_track_next_sample(
 	struct mp4_demux *demux,

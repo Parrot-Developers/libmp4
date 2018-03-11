@@ -455,6 +455,36 @@ int mp4_demux_get_track_avc_decoder_config(
 }
 
 
+int mp4_demux_get_track_audio_specific_config(
+	struct mp4_demux *demux,
+	unsigned int track_id,
+	uint8_t **audio_specific_config,
+	unsigned int *asc_size)
+{
+	struct mp4_file *mp4;
+	struct mp4_track *tk = NULL;
+
+	MP4_RETURN_ERR_IF_FAILED(demux != NULL, -EINVAL);
+	MP4_RETURN_ERR_IF_FAILED(audio_specific_config != NULL, -EINVAL);
+	MP4_RETURN_ERR_IF_FAILED(asc_size != NULL, -EINVAL);
+
+	mp4 = &demux->mp4;
+
+	tk = mp4_track_find_by_id(mp4, track_id);
+	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(tk != NULL, -ENOENT,
+		"track not found");
+
+	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
+		tk->audioSpecificConfig != NULL, -ENOENT,
+		"track does not have an AudioSpecificConfig");
+
+	*audio_specific_config = tk->audioSpecificConfig;
+	*asc_size = tk->audioSpecificConfigSize;
+
+	return 0;
+}
+
+
 int mp4_demux_get_track_next_sample(
 	struct mp4_demux *demux,
 	unsigned int track_id,

@@ -938,6 +938,146 @@ static off_t mp4_box_avcc_read(
 	return boxReadBytes;
 }
 
+static off_t mp4_box_esds_read(
+	struct mp4_file *mp4,
+	off_t maxBytes,
+	struct mp4_track *track)
+{
+	off_t boxReadBytes = 0, minBytes = 9;
+	uint32_t val32;
+	uint16_t val16;
+	uint8_t val8;
+
+	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((track != NULL), -EINVAL,
+		"invalid track");
+
+	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= minBytes), -EINVAL,
+		"invalid size: %" PRIi64 " expected %" PRIi64 " min",
+		(int64_t)maxBytes, (int64_t)minBytes);
+
+	/* version, always 0 */
+	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_LOGD("# edsd: version=%" PRIu32, val32);
+
+	/* ESDescriptor */
+	uint8_t tag;
+	MP4_READ_8(mp4->file, tag, boxReadBytes);
+	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((tag == 3), -EPROTO,
+		"invalid ESDescriptor tag: %" PRIu8 " expected %d",
+		tag, 0x03);
+	MP4_LOGD("# esds: ESDescriptor tag:0x%x", tag);
+
+	off_t size = 0;
+	int cnt = 0;
+	do {
+		MP4_READ_8(mp4->file, val8, boxReadBytes);
+		size = (size << 7) + (val8 & 0x7F);
+		cnt++;
+	} while (val8 & 0x80 && cnt < 4);
+	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(((val8 & 0x80) == 0), -EPROTO,
+		"invalid ESDescriptor size, more than 4 bytes !");
+	MP4_LOGD("# esds: ESDescriptor size:%zd (%d bytes)", size, cnt);
+
+	minBytes = boxReadBytes + size;
+
+	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= minBytes), -EINVAL,
+		"invalid size: %" PRIi64 " expected %" PRIi64 " min",
+		(int64_t)maxBytes, (int64_t)minBytes);
+
+	/* ES_ID */
+	MP4_READ_16(mp4->file, val16, boxReadBytes);
+	val16 = ntohs(val16);
+	MP4_LOGD("# esds: ESDescriptor ES_ID:%" PRIu16, val16);
+
+	/* flags */
+	uint8_t flags;
+	MP4_READ_8(mp4->file, flags, boxReadBytes);
+	MP4_LOGD("# esds: ESDecriptor flags:0x%02x", flags);
+
+	if (flags & 0x80) {
+		/* dependsOn_ES_ID */
+		MP4_READ_16(mp4->file, val16, boxReadBytes);
+		val16 = ntohs(val16);
+		MP4_LOGD("# esds: ESDescriptor dependsOn_ES_ID:%" PRIu16,
+			val16);
+	}
+	if (flags & 0x40) {
+		/* URL_Flag : read url_len & url */
+		MP4_READ_8(mp4->file, val8, boxReadBytes);
+		MP4_LOGD("# esds: ESDescriptor url_len:%" PRIu8, val8);
+		MP4_SKIP_BYTES(mp4->file, val8, boxReadBytes);
+		MP4_LOGD("# esds: skipped %" PRIu8 " bytes", val8);
+	}
+
+	/* DecoderConfigDescriptor */
+	MP4_READ_8(mp4->file, tag, boxReadBytes);
+	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((tag == 4), -EPROTO,
+		"invalid DecoderConfigDescriptor tag: %" PRIu8 " expected %d",
+		tag, 0x04);
+	MP4_LOGD("# esds: DecoderConfigDescriptor tag:0x%x", tag);
+	size = 0;
+	cnt = 0;
+	do {
+		MP4_READ_8(mp4->file, val8, boxReadBytes);
+		size = (size << 7) + (val8 & 0x7F);
+		cnt++;
+	} while (val8 & 0x80 && cnt < 4);
+	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(((val8 & 0x80) == 0), -EPROTO,
+		"invalid DecoderConfigDescriptor size, more than 4 bytes !");
+	MP4_LOGD("# esds: DCD size:%zd (%d bytes)", size, cnt);
+
+	minBytes = boxReadBytes + size;
+
+	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= minBytes), -EINVAL,
+		"invalid size: %" PRIi64 " expected %" PRIi64 " min",
+		(int64_t)maxBytes, (int64_t)minBytes);
+
+	/* Next 13 bytes unused */
+	MP4_SKIP_BYTES(mp4->file, 13, boxReadBytes);
+	MP4_LOGD("# esds: skipped 13 bytes");
+
+	/* DecoderSpecificInfo */
+	MP4_READ_8(mp4->file, tag, boxReadBytes);
+	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((tag == 5), -EPROTO,
+		"invalid DecoderSpecificInfo tag: %" PRIu8 " expected %d",
+		tag, 0x05);
+	MP4_LOGD("# esds: DecoderSpecificInfo tag:0x%x", tag);
+	size = 0;
+	cnt = 0;
+	do {
+		MP4_READ_8(mp4->file, val8, boxReadBytes);
+		size = (size << 7) + (val8 & 0x7F);
+		cnt++;
+	} while (val8 & 0x80 && cnt < 4);
+	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(((val8 & 0x80) == 0), -EPROTO,
+		"invalid DecoderSpecificInfo size, more than 4 bytes !");
+	MP4_LOGD("# esds: DSI size:%zd (%d bytes)", size, cnt);
+
+	minBytes = boxReadBytes + size;
+
+	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((maxBytes >= minBytes), -EINVAL,
+		"invalid size: %" PRIi64 " expected %" PRIi64 " min",
+		(int64_t)maxBytes, (int64_t)minBytes);
+
+	/* Only read the first audioSpecificConfig */
+	if ((!track->audioSpecificConfig) && (size > 0)) {
+		track->audioSpecificConfigSize = size;
+		track->audioSpecificConfig = malloc(size);
+		MP4_RETURN_ERR_IF_FAILED((track->audioSpecificConfig != NULL),
+			-ENOMEM);
+		size_t count = fread(track->audioSpecificConfig, size,
+			1, mp4->file);
+		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((count == 1), -EIO,
+			"failed to read %zd bytes from file", size);
+		MP4_LOGD("# esds: read %zd bytes for audioSpecificConfig",
+			size);
+		boxReadBytes += size;
+	}
+	/* Skip the rest of the box */
+	MP4_SKIP(mp4->file, boxReadBytes, maxBytes);
+
+	return boxReadBytes;
+}
 
 static off_t mp4_box_stsd_read(
 	struct mp4_file *mp4,
@@ -1134,6 +1274,32 @@ static off_t mp4_box_stsd_read(
 			track->audioSampleRate = ntohl(val32);
 			MP4_LOGD("# stsd: samplerate=%.2f",
 				(float)track->audioSampleRate / 65536.);
+
+			/* codec specific size */
+			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			uint32_t codecSize = ntohl(val32);
+			MP4_LOGD("# stsd: codec_size=%" PRIu32, codecSize);
+
+			/* codec specific */
+			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			uint32_t codec = ntohl(val32);
+			MP4_LOGD("# stsd: codec=%c%c%c%c",
+				(char)((codec >> 24) & 0xFF),
+				(char)((codec >> 16) & 0xFF),
+				(char)((codec >> 8) & 0xFF),
+				(char)(codec & 0xFF));
+
+			if (codec == MP4_AUDIO_DECODER_CONFIG_BOX) {
+				off_t ret = mp4_box_esds_read(
+					mp4, maxBytes - boxReadBytes, track);
+				if (ret < 0) {
+					MP4_LOGE("mp4_box_esds_read() failed"
+						" (%" PRIi64 ")", (int64_t)ret);
+					return ret;
+				}
+				boxReadBytes += ret;
+			}
+
 			break;
 		}
 		case MP4_TRACK_TYPE_HINT:

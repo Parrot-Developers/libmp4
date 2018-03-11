@@ -181,6 +181,7 @@ int mp4_track_destroy(
 	free(track->syncSampleEntries);
 	free(track->videoSps);
 	free(track->videoPps);
+	free(track->audioSpecificConfig);
 	free(track->metadataContentEncoding);
 	free(track->metadataMimeFormat);
 	free(track);
