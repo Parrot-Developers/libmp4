@@ -302,8 +302,7 @@ int mp4_demux_seek(struct mp4_demux *demux,
 
 	list_walk_entry_forward(&mp4->tracks, tk, node)
 	{
-		if (tk->type == MP4_TRACK_TYPE_CHAPTERS ||
-		    tk->type == MP4_TRACK_TYPE_METADATA)
+		if (tk->type == MP4_TRACK_TYPE_CHAPTERS)
 			continue;
 
 		int found = 0, i, idx = 0;
@@ -427,21 +426,22 @@ int mp4_demux_get_track_info(struct mp4_demux *demux,
 	track_info->modification_time =
 		tk->creationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET;
 	track_info->sample_count = tk->sampleCount;
+	track_info->sample_max_size = tk->sampleMaxSize;
+	track_info->sample_offsets = tk->sampleOffset;
+	track_info->sample_sizes = tk->sampleSize;
 	track_info->has_metadata = (tk->metadata) ? 1 : 0;
 	if (tk->metadata) {
 		track_info->metadata_content_encoding =
-			tk->metadata->metadataContentEncoding;
-		track_info->metadata_mime_format =
-			tk->metadata->metadataMimeFormat;
-	} else if (tk->type == MP4_TRACK_TYPE_METADATA) {
-		track_info->metadata_content_encoding =
-			tk->metadataContentEncoding;
-		track_info->metadata_mime_format = tk->metadataMimeFormat;
+			tk->metadata->contentEncoding;
+		track_info->metadata_mime_format = tk->metadata->mimeFormat;
 	}
-	if (tk->type == MP4_TRACK_TYPE_VIDEO) {
-		track_info->video_codec = tk->videoCodec;
-		track_info->video_width = tk->videoWidth;
-		track_info->video_height = tk->videoHeight;
+	if (tk->type == MP4_TRACK_TYPE_METADATA) {
+		track_info->content_encoding = tk->contentEncoding;
+		track_info->mime_format = tk->mimeFormat;
+	} else if (tk->type == MP4_TRACK_TYPE_VIDEO) {
+		track_info->video_codec = tk->vdc.codec;
+		track_info->video_width = tk->vdc.width;
+		track_info->video_height = tk->vdc.height;
 	} else if (tk->type == MP4_TRACK_TYPE_AUDIO) {
 		track_info->audio_codec = tk->audioCodec;
 		track_info->audio_channel_count = tk->audioChannelCount;
@@ -454,26 +454,16 @@ int mp4_demux_get_track_info(struct mp4_demux *demux,
 }
 
 
-int mp4_demux_get_track_avc_decoder_config(struct mp4_demux *demux,
-					   unsigned int track_id,
-					   uint8_t **sps,
-					   unsigned int *sps_size,
-					   uint8_t **pps,
-					   unsigned int *pps_size)
+int mp4_demux_get_track_video_decoder_config(
+	struct mp4_demux *demux,
+	unsigned int track_id,
+	struct mp4_video_decoder_config *vdc)
 {
 	struct mp4_file *mp4;
 	struct mp4_track *tk = NULL;
 
 	ULOG_ERRNO_RETURN_ERR_IF(demux == NULL, EINVAL);
-
-	if (sps != NULL)
-		*sps = NULL;
-	if (pps != NULL)
-		*pps = NULL;
-	if (sps_size != NULL)
-		*sps_size = 0;
-	if (pps_size != NULL)
-		*pps_size = 0;
+	ULOG_ERRNO_RETURN_ERR_IF(vdc == NULL, EINVAL);
 
 	mp4 = &demux->mp4;
 
@@ -486,22 +476,42 @@ int mp4_demux_get_track_avc_decoder_config(struct mp4_demux *demux,
 		ULOGE("track id=%d is not of video type", track_id);
 		return -EINVAL;
 	}
-	if (tk->videoCodec != MP4_VIDEO_CODEC_AVC) {
-		ULOGE("track id=%d video codec is not AVC", track_id);
-		return -EINVAL;
-	}
 
-	if (tk->videoSps) {
-		if (sps != NULL)
-			*sps = tk->videoSps;
-		if (sps_size != NULL)
-			*sps_size = tk->videoSpsSize;
-	}
-	if (tk->videoPps) {
-		if (pps != NULL)
-			*pps = tk->videoPps;
-		if (pps_size != NULL)
-			*pps_size = tk->videoPpsSize;
+	vdc->width = tk->vdc.width;
+	vdc->height = tk->vdc.height;
+
+	switch (tk->vdc.codec) {
+	case MP4_VIDEO_CODEC_HEVC:
+		vdc->codec = MP4_VIDEO_CODEC_HEVC;
+		vdc->hevc.hvcc_info = tk->vdc.hevc.hvcc_info;
+		if (tk->vdc.hevc.vps) {
+			vdc->hevc.vps = tk->vdc.hevc.vps;
+			vdc->hevc.vps_size = tk->vdc.hevc.vps_size;
+		}
+		if (tk->vdc.hevc.sps) {
+			vdc->hevc.sps = tk->vdc.hevc.sps;
+			vdc->hevc.sps_size = tk->vdc.hevc.sps_size;
+		}
+		if (tk->vdc.hevc.pps) {
+			vdc->hevc.pps = tk->vdc.hevc.pps;
+			vdc->hevc.pps_size = tk->vdc.hevc.pps_size;
+		}
+		break;
+	case MP4_VIDEO_CODEC_AVC:
+		vdc->codec = MP4_VIDEO_CODEC_AVC;
+		if (tk->vdc.avc.sps) {
+			vdc->avc.sps = tk->vdc.avc.sps;
+			vdc->avc.sps_size = tk->vdc.avc.sps_size;
+		}
+		if (tk->vdc.avc.pps) {
+			vdc->avc.pps = tk->vdc.avc.pps;
+			vdc->avc.pps_size = tk->vdc.avc.pps_size;
+		}
+		break;
+	default:
+		ULOGE("track id=%d video codec is neither AVC nor HEVC",
+		      track_id);
+		return -EINVAL;
 	}
 
 	return 0;
@@ -594,8 +604,13 @@ int mp4_demux_get_track_sample(struct mp4_demux *demux,
 		}
 		size_t count = fread(sample_buffer, sample_size, 1, mp4->file);
 		if (count != 1) {
-			ULOG_ERRNO("fread", errno);
-			return -errno;
+			track_sample->size = 0;
+			sample_size = 0;
+			_ret = -errno;
+			if (_ret == 0)
+				_ret = -ENODATA;
+			ULOG_ERRNO("fread", -_ret);
+			return _ret;
 		}
 	} else if ((sample_buffer) && (sample_size > sample_buffer_size)) {
 		ULOGE("buffer too small (%d bytes, %d needed)",
@@ -619,8 +634,12 @@ int mp4_demux_get_track_sample(struct mp4_demux *demux,
 			size_t count = fread(
 				metadata_buffer, metadata_size, 1, mp4->file);
 			if (count != 1) {
-				ULOG_ERRNO("fread", errno);
-				return -errno;
+				track_sample->metadata_size = 0;
+				_ret = -errno;
+				if (_ret == 0)
+					_ret = -ENODATA;
+				ULOG_ERRNO("fread", -_ret);
+				return _ret;
 			}
 		} else if ((metadata_buffer) &&
 			   (metadata_size > metadata_buffer_size)) {
@@ -633,7 +652,7 @@ int mp4_demux_get_track_sample(struct mp4_demux *demux,
 	}
 	sampleTime = tk->sampleDecodingTime[tk->nextSample];
 	track_sample->silent =
-		!!((tk->pendingSeekTime) && (sampleTime < tk->pendingSeekTime));
+		((tk->pendingSeekTime) && (sampleTime < tk->pendingSeekTime));
 	if (sampleTime >= tk->pendingSeekTime)
 		tk->pendingSeekTime = 0;
 	track_sample->dts = sampleTime;

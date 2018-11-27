@@ -57,6 +57,8 @@ const char *mp4_video_codec_str(enum mp4_video_codec codec)
 	switch (codec) {
 	case MP4_VIDEO_CODEC_AVC:
 		return "AVC";
+	case MP4_VIDEO_CODEC_HEVC:
+		return "HEVC";
 	case MP4_VIDEO_CODEC_UNKNOWN:
 	default:
 		return "UNKNOWN";
@@ -67,8 +69,8 @@ const char *mp4_video_codec_str(enum mp4_video_codec codec)
 const char *mp4_audio_codec_str(enum mp4_audio_codec codec)
 {
 	switch (codec) {
-	case MP4_AUDIO_CODEC_AAC:
-		return "AAC";
+	case MP4_AUDIO_CODEC_AAC_LC:
+		return "AAC_LC";
 	case MP4_AUDIO_CODEC_UNKNOWN:
 	default:
 		return "UNKNOWN";
@@ -87,5 +89,31 @@ const char *mp4_metadata_cover_type_str(enum mp4_metadata_cover_type type)
 		return "BMP";
 	default:
 		return "UNKNOWN";
+	}
+}
+
+
+void mp4_video_decoder_config_destroy(struct mp4_video_decoder_config *vdc)
+{
+	if (vdc == NULL)
+		return;
+
+	switch (vdc->codec) {
+	case MP4_VIDEO_CODEC_AVC:
+		free(vdc->avc.sps);
+		free(vdc->avc.pps);
+		vdc->avc.sps = NULL;
+		vdc->avc.pps = NULL;
+		break;
+	case MP4_VIDEO_CODEC_HEVC:
+		free(vdc->hevc.vps);
+		free(vdc->hevc.sps);
+		free(vdc->hevc.pps);
+		vdc->hevc.vps = NULL;
+		vdc->hevc.sps = NULL;
+		vdc->hevc.pps = NULL;
+		break;
+	default:
+		return;
 	}
 }

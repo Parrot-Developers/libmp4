@@ -68,23 +68,22 @@ struct mp4_box *mp4_box_new(struct mp4_box *parent)
 }
 
 
-int mp4_box_destroy(struct mp4_box *box)
+void mp4_box_destroy(struct mp4_box *box)
 {
 	if (box == NULL)
-		return 0;
+		return;
 
 	struct mp4_box *child = NULL, *tmp = NULL;
 	list_walk_entry_forward_safe(&box->children, child, tmp, node)
 	{
-		int ret = mp4_box_destroy(child);
-		if (ret < 0)
-			ULOG_ERRNO("mp4_box_destroy", -ret);
+		mp4_box_destroy(child);
 	}
 
 	if (list_node_is_ref(&box->node))
 		list_del(&box->node);
+	if (box->writer.need_free)
+		free(box->writer.args);
 	free(box);
-	return 0;
 }
 
 
@@ -345,9 +344,9 @@ static off_t mp4_box_tkhd_read(struct mp4_file *mp4,
 	flags &= ((1 << 24) - 1);
 	ULOGD("- tkhd: version=%d", version);
 	ULOGD("- tkhd: flags=%" PRIu32, flags);
-	track->enabled = flags & 0x1;
-	track->in_movie = (flags >> 1) & 0x1;
-	track->in_preview = (flags >> 2) & 0x1;
+	track->enabled = !!(flags & TRACK_FLAG_ENABLED);
+	track->in_movie = !!(flags & TRACK_FLAG_IN_MOVIE);
+	track->in_preview = !!(flags & TRACK_FLAG_IN_PREVIEW);
 
 	if (version == 1) {
 		CHECK_SIZE(maxBytes, 24 * 4);
@@ -935,16 +934,16 @@ mp4_box_avcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 		minBytes += spsLength;
 		CHECK_SIZE(maxBytes, minBytes);
 
-		if ((!track->videoSps) && (spsLength)) {
+		if ((!track->vdc.avc.sps) && (spsLength)) {
 			/* First SPS found */
-			track->videoSpsSize = spsLength;
-			track->videoSps = malloc(spsLength);
-			if (track->videoSps == NULL) {
+			track->vdc.avc.sps_size = spsLength;
+			track->vdc.avc.sps = malloc(spsLength);
+			if (track->vdc.avc.sps == NULL) {
 				ULOG_ERRNO("malloc", ENOMEM);
 				return -ENOMEM;
 			}
-			size_t count =
-				fread(track->videoSps, spsLength, 1, mp4->file);
+			size_t count = fread(
+				track->vdc.avc.sps, spsLength, 1, mp4->file);
 			if (count != 1) {
 				ULOG_ERRNO("fread", errno);
 				return -errno;
@@ -980,16 +979,16 @@ mp4_box_avcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 		minBytes += ppsLength;
 		CHECK_SIZE(maxBytes, minBytes);
 
-		if ((!track->videoPps) && (ppsLength)) {
+		if ((!track->vdc.avc.pps) && (ppsLength)) {
 			/* First PPS found */
-			track->videoPpsSize = ppsLength;
-			track->videoPps = malloc(ppsLength);
-			if (track->videoPps == NULL) {
+			track->vdc.avc.pps_size = ppsLength;
+			track->vdc.avc.pps = malloc(ppsLength);
+			if (track->vdc.avc.pps == NULL) {
 				ULOG_ERRNO("malloc", ENOMEM);
 				return -ENOMEM;
 			}
-			size_t count =
-				fread(track->videoPps, ppsLength, 1, mp4->file);
+			size_t count = fread(
+				track->vdc.avc.pps, ppsLength, 1, mp4->file);
 			if (count != 1) {
 				ULOG_ERRNO("fread", errno);
 				return -errno;
@@ -1008,6 +1007,224 @@ mp4_box_avcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 	/* Skip the rest of the box */
 	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
 
+	return boxReadBytes;
+}
+
+
+/**
+ * ISO/IEC 14496-15 - chap. 8.3.3.1.2 - HVCC decoder configuration record
+ */
+static off_t
+mp4_box_hvcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
+{
+	off_t boxReadBytes = 0, minBytes = 22;
+	uint32_t val32;
+	uint16_t val16;
+	uint8_t val8, nb_arrays;
+	struct mp4_hvcc_info *hvcc;
+
+	ULOG_ERRNO_RETURN_ERR_IF(track == NULL, EINVAL);
+
+	CHECK_SIZE(maxBytes, minBytes);
+
+	/* 'version' */
+	uint8_t version;
+	MP4_READ_8(mp4->file, version, boxReadBytes);
+	if (version != 1)
+		ULOGE("hvcC configurationVersion mismatch: %u (expected 1)",
+		      version);
+	ULOGD("- hvcC: version=%d", version);
+
+	hvcc = &track->vdc.hevc.hvcc_info;
+
+	/* 'general_profile_space', 'general_tier_flag', 'general_profile_idc'
+	 */
+	MP4_READ_8(mp4->file, val8, boxReadBytes);
+	hvcc->general_profile_space = val8 >> 6;
+	hvcc->general_tier_flag = (val8 >> 5) & 0x01;
+	hvcc->general_profile_idc = val8 & 0x1F;
+	ULOGD("- hvcC: general_profile_space=%d", hvcc->general_profile_space);
+	ULOGD("- hvcC: general_tier_flag=%d", hvcc->general_tier_flag);
+	ULOGD("- hvcC: general_profile_idc=%d", hvcc->general_profile_idc);
+
+	/* 'general_profile_compatibility_flags' */
+	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	hvcc->general_profile_compatibility_flags = htonl(val32);
+	ULOGD("- hvcC: general_profile_compatibility_flags= %#" PRIx32,
+	      hvcc->general_profile_compatibility_flags);
+
+	/* 'general_constraints_indicator_flags' */
+	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_16(mp4->file, val16, boxReadBytes);
+	val32 = htonl(val32);
+	val16 = htons(val16);
+	hvcc->general_constraints_indicator_flags =
+		(((uint64_t)val32) << 16) + val16;
+	ULOGD("- hvcC: general_constraints_indicator_flags=%#" PRIx64,
+	      hvcc->general_constraints_indicator_flags);
+
+	/* 'general_level_idc' */
+	MP4_READ_8(mp4->file, hvcc->general_level_idc, boxReadBytes);
+	ULOGD("- hvcC: level_idc=%d", hvcc->general_level_idc);
+
+	/* 'min_spatial_segmentation_idc' */
+	MP4_READ_16(mp4->file, val16, boxReadBytes);
+	val16 = htons(val16);
+	hvcc->min_spatial_segmentation_idc = val16 & 0x0FFF;
+	ULOGD("- hvcC: min_sseg_idc=%d", hvcc->min_spatial_segmentation_idc);
+
+	/* 'parallelismType' */
+	MP4_READ_8(mp4->file, val8, boxReadBytes);
+	hvcc->parallelism_type = val8 & 0x02;
+	ULOGD("- hvcC: parallel_type=%d", hvcc->parallelism_type);
+
+	/* 'chromaFormat' */
+	MP4_READ_8(mp4->file, val8, boxReadBytes);
+	hvcc->chroma_format = val8 & 0x02;
+	ULOGD("- hvcC: chroma_format=%d", hvcc->chroma_format);
+
+	/* 'bitDepthLuma' */
+	MP4_READ_8(mp4->file, val8, boxReadBytes);
+	hvcc->bit_depth_luma = (val8 & 0x03) + 8;
+	ULOGD("- hvcC: bit_depth_luma=%d", hvcc->bit_depth_luma);
+
+	/* 'bitDepthChroma' */
+	MP4_READ_8(mp4->file, val8, boxReadBytes);
+	hvcc->bit_depth_chroma = (val8 & 0x03) + 8;
+	ULOGD("- hvcC: bit_depth_chroma=%d", hvcc->bit_depth_chroma);
+
+	/* 'avgFrameRate' */
+	MP4_READ_16(mp4->file, val16, boxReadBytes);
+	hvcc->avg_framerate = htons(val16);
+	ULOGD("- hvcC: avg_framerate=%d", hvcc->avg_framerate);
+
+	/* 'constantFrameRate', 'numTemporalLayers', 'temporalIdNested'
+	   'lengthSize'	*/
+	MP4_READ_8(mp4->file, val8, boxReadBytes);
+	hvcc->constant_framerate = (val8 >> 6) & 0x03;
+	hvcc->num_temporal_layers = (val8 >> 3) & 0x7;
+	hvcc->temporal_id_nested = (val8 >> 2) & 0x01;
+	hvcc->length_size = (val8 & 0x03) + 1;
+	ULOGD("- hvcC: constant_framerate=%d", hvcc->constant_framerate);
+	ULOGD("- hvcC: num_temporal_layers=%d", hvcc->num_temporal_layers);
+	ULOGD("- hvcC: temporal_id_nested=%d", hvcc->temporal_id_nested);
+	ULOGD("- hvcC: length_size=%d", hvcc->length_size);
+
+	/* 'numOfArrays' */
+	MP4_READ_8(mp4->file, val8, boxReadBytes);
+	if (val8 > 16) {
+		ULOGE("hvcC: invalid numOfArrays=%d", val8);
+		return -EINVAL;
+	}
+	nb_arrays = val8;
+	ULOGD("- hvcC: array_size=%d", nb_arrays);
+
+	for (int i = 0; i < nb_arrays; i++) {
+		uint8_t array_completeness, nalu_type;
+		uint16_t nb_nalus;
+
+		ULOGD("- hvcC:     ------------------ NALU #%d", i);
+		/* 'array_completeness' and 'NAL_unit_type' */
+		MP4_READ_8(mp4->file, val8, boxReadBytes);
+		array_completeness = (val8 >> 7) & 0x01;
+		nalu_type = val8 & 0x3F;
+		ULOGD("- hvcC:     array_completeness=%d", array_completeness);
+		ULOGD("- hvcC:     nal_unit_type=%d", nalu_type);
+
+		/* 'numNalus' */
+		MP4_READ_16(mp4->file, val16, boxReadBytes);
+		nb_nalus = htons(val16);
+		if (nb_nalus > 16) {
+			ULOGE("hvcC: invalid numNalus=%d", nb_nalus);
+			return -EINVAL;
+		}
+		ULOGD("- hvcC:     num_nalus=%d", nb_nalus);
+
+		for (int j = 0; j < nb_nalus; j++) {
+			uint8_t **nalu_pptr = NULL;
+			uint16_t nalu_length;
+
+			/* 'nalUnitLength' */
+			MP4_READ_16(mp4->file, val16, boxReadBytes);
+			nalu_length = htons(val16);
+			ULOGD("- hvcC:         nalu_length = %d", nalu_length);
+			nalu_pptr = NULL;
+			if (nalu_length) {
+				switch (nalu_type) {
+				case MP4_H265_NALU_TYPE_VPS:
+					/* Ignore all but 1st VPS */
+					if (track->vdc.hevc.vps)
+						break;
+					/* First VPS found */
+					track->vdc.hevc.vps_size = nalu_length;
+					nalu_pptr = &track->vdc.hevc.vps;
+					ULOGD("- hvcC:         "
+					      "track->vdc.hevc.vps_size=%zu",
+					      track->vdc.hevc.vps_size);
+					break;
+				case MP4_H265_NALU_TYPE_SPS:
+					/* Ignore all but 1st SPS */
+					if (track->vdc.hevc.sps)
+						break;
+					/* First SPS found */
+					track->vdc.hevc.sps_size = nalu_length;
+					nalu_pptr = &track->vdc.hevc.sps;
+					ULOGD("- hvcC:         "
+					      "track->vdc.hevc.sps_size=%zu",
+					      track->vdc.hevc.sps_size);
+					break;
+				case MP4_H265_NALU_TYPE_PPS:
+					/* Ignore all but 1st PPS */
+					if (track->vdc.hevc.pps)
+						break;
+					/* First PPS found */
+					track->vdc.hevc.pps_size = nalu_length;
+					nalu_pptr = &track->vdc.hevc.pps;
+					ULOGD("- hvcC:         "
+					      "track->vdc.hevc.pps_size=%zu",
+					      track->vdc.hevc.pps_size);
+					break;
+				default:
+					ULOGD("- hvcC:         ignoring NALU "
+					      "(type = %u)",
+					      nalu_type);
+					/* Ignore any other NALU */
+					int ret = fseeko(mp4->file,
+							 nalu_length,
+							 SEEK_CUR);
+					if (ret != 0) {
+						ULOG_ERRNO("fseeko", errno);
+						return -errno;
+					}
+					break;
+				}
+			}
+			if (nalu_pptr != NULL) {
+				/* Store the 1st nalu of a given type */
+				*nalu_pptr =
+					calloc(nalu_length, sizeof(uint8_t));
+				if (*nalu_pptr == NULL) {
+					ULOG_ERRNO("calloc", ENOMEM);
+					return -ENOMEM;
+				}
+				size_t count = fread(
+					*nalu_pptr, nalu_length, 1, mp4->file);
+				if (count != 1) {
+					ULOG_ERRNO("fread", errno);
+					return -errno;
+				}
+			} else {
+				/* Skip the latter nalu of a given type */
+				int ret = fseeko(
+					mp4->file, nalu_length, SEEK_CUR);
+				if (ret != 0) {
+					ULOG_ERRNO("fseeko", errno);
+					return -errno;
+				}
+			}
+			boxReadBytes += nalu_length;
+		}
+	}
 	return boxReadBytes;
 }
 
@@ -1049,12 +1266,6 @@ mp4_box_esds_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 		size = (size << 7) + (val8 & 0x7F);
 		cnt++;
 	} while (val8 & 0x80 && cnt < 4);
-	if (tag != 3) {
-		ULOGE("invalid ESDescriptor tag: %" PRIu8 ", expected %d",
-		      tag,
-		      0x03);
-		return -EPROTO;
-	}
 	if ((val8 & 0x80) != 0) {
 		ULOGE("invalid ESDescriptor size: more than 4 bytes");
 		return -EPROTO;
@@ -1116,9 +1327,32 @@ mp4_box_esds_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 	minBytes = boxReadBytes + size;
 	CHECK_SIZE(maxBytes, minBytes);
 
-	/* Next 13 bytes unused */
-	MP4_READ_SKIP(mp4->file, 13, boxReadBytes);
-	ULOGD("- esds: skipped 13 bytes");
+	/* 'DecoderConfigDescriptor.objectTypeIndication' */
+	uint8_t objectTypeIndication;
+	MP4_READ_8(mp4->file, objectTypeIndication, boxReadBytes);
+	if (objectTypeIndication != 0x40) {
+		ULOGE("invalid objectTypeIndication: %" PRIu8 ", expected 0x%x",
+		      objectTypeIndication,
+		      0x40);
+		return -EPROTO;
+	}
+	ULOGD("- esds: objectTypeIndication:0x%x", objectTypeIndication);
+
+	/* 'DecoderConfigDescriptor.streamType' */
+	uint8_t streamType;
+	MP4_READ_8(mp4->file, streamType, boxReadBytes);
+	streamType >>= 2;
+	if (streamType != 0x5) {
+		ULOGE("invalid streamType: %" PRIu8 ", expected 0x%x",
+		      streamType,
+		      0x5);
+		return -EPROTO;
+	}
+	ULOGD("- esds: streamType:0x%x", streamType);
+
+	/* Next 11 bytes unused */
+	MP4_READ_SKIP(mp4->file, 11, boxReadBytes);
+	ULOGD("- esds: skipped 11 bytes");
 
 	/* 'DecoderSpecificInfo' */
 	MP4_READ_8(mp4->file, tag, boxReadBytes);
@@ -1163,6 +1397,13 @@ mp4_box_esds_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 		ULOGD("- esds: read %zd bytes for audioSpecificConfig",
 		      (ssize_t)size);
 		boxReadBytes += size;
+
+		val8 = *(track->audioSpecificConfig);
+		uint8_t audioObjectType = val8 >> 3;
+		ULOGD("- esds: audioSpecificConfig.audioObjectType: %d",
+		      audioObjectType);
+		if (audioObjectType == 2)
+			track->audioCodec = MP4_AUDIO_CODEC_AAC_LC;
 	}
 
 	/* Skip the rest of the box */
@@ -1180,7 +1421,7 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 			       off_t maxBytes,
 			       struct mp4_track *track)
 {
-	off_t boxReadBytes = 0;
+	off_t boxReadBytes = 0, ret;
 	uint32_t val32;
 	uint16_t val16;
 
@@ -1241,10 +1482,10 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 
 			/* 'width' & 'height' */
 			MP4_READ_32(mp4->file, val32, boxReadBytes);
-			track->videoWidth = ((ntohl(val32) >> 16) & 0xFFFF);
-			track->videoHeight = (ntohl(val32) & 0xFFFF);
-			ULOGD("- stsd: width=%" PRIu32, track->videoWidth);
-			ULOGD("- stsd: height=%" PRIu32, track->videoHeight);
+			track->vdc.width = ((ntohl(val32) >> 16) & 0xFFFF);
+			track->vdc.height = (ntohl(val32) & 0xFFFF);
+			ULOGD("- stsd: width=%" PRIu32, track->vdc.width);
+			ULOGD("- stsd: height=%" PRIu32, track->vdc.height);
 
 			/* 'horizresolution' */
 			MP4_READ_32(mp4->file, val32, boxReadBytes);
@@ -1297,9 +1538,10 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 			      (char)((codec >> 8) & 0xFF),
 			      (char)(codec & 0xFF));
 
-			if (codec == MP4_AVC_DECODER_CONFIG_BOX) {
-				track->videoCodec = MP4_VIDEO_CODEC_AVC;
-				off_t ret = mp4_box_avcc_read(
+			switch (codec) {
+			case MP4_AVC_DECODER_CONFIG_BOX:
+				track->vdc.codec = MP4_VIDEO_CODEC_AVC;
+				ret = mp4_box_avcc_read(
 					mp4, maxBytes - boxReadBytes, track);
 				if (ret < 0) {
 					ULOGE("mp4_box_avcc_read() failed"
@@ -1308,6 +1550,22 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 					return ret;
 				}
 				boxReadBytes += ret;
+				break;
+			case MP4_HEVC_DECODER_CONFIG_BOX:
+				track->vdc.codec = MP4_VIDEO_CODEC_HEVC;
+				ret = mp4_box_hvcc_read(
+					mp4, maxBytes - boxReadBytes, track);
+				if (ret < 0) {
+					ULOGE("mp4_box_hvcc_read() failed"
+					      " (%" PRIi64 ")",
+					      (int64_t)ret);
+					return ret;
+				}
+				boxReadBytes += ret;
+				break;
+			default:
+				ULOGE("unsupported decoder config box");
+				return -ENOSYS;
 			}
 			break;
 		}
@@ -1433,7 +1691,7 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 			}
 			str[k + 1] = '\0';
 			if (strlen(str) > 0)
-				track->metadataContentEncoding = strdup(str);
+				track->contentEncoding = strdup(str);
 			ULOGD("- stsd: content_encoding=%s", str);
 
 			for (k = 0;
@@ -1445,7 +1703,7 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 			}
 			str[k + 1] = '\0';
 			if (strlen(str) > 0)
-				track->metadataMimeFormat = strdup(str);
+				track->mimeFormat = strdup(str);
 			ULOGD("- stsd: mime_format=%s", str);
 
 			break;
@@ -1644,6 +1902,8 @@ static off_t mp4_box_stsz_read(struct mp4_file *mp4,
 			/* 'entry_size' */
 			MP4_READ_32(mp4->file, val32, boxReadBytes);
 			track->sampleSize[i] = ntohl(val32);
+			if (track->sampleSize[i] > track->sampleMaxSize)
+				track->sampleMaxSize = track->sampleSize[i];
 #if LOG_ALL
 			ULOGD("- stsz: entry_size=%" PRIu32,
 			      track->sampleSize[i]);
@@ -2681,9 +2941,9 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 /**
  * ISO/IEC 14496-15 - chap. 5.3.3.1 - AVC decoder configuration record
  */
-int mp4_generate_avc_decoder_config(uint8_t *sps,
+int mp4_generate_avc_decoder_config(const uint8_t *sps,
 				    unsigned int sps_size,
-				    uint8_t *pps,
+				    const uint8_t *pps,
 				    unsigned int pps_size,
 				    uint8_t *avcc,
 				    unsigned int *avcc_size)

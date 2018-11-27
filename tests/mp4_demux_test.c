@@ -137,13 +137,6 @@ static void print_tracks(struct mp4_demux *demux)
 			printf("  dimensions=%" PRIu32 "x%" PRIu32 "\n",
 			       tk.video_width,
 			       tk.video_height);
-			if (tk.has_metadata) {
-				printf("  metadata: present\n");
-				printf("  metadata content encoding: %s\n",
-				       tk.metadata_content_encoding);
-				printf("  metadata mime format: %s\n",
-				       tk.metadata_mime_format);
-			}
 			break;
 		case MP4_TRACK_TYPE_AUDIO:
 			printf("  codec: %s\n",
@@ -155,12 +148,18 @@ static void print_tracks(struct mp4_demux *demux)
 			       tk.audio_sample_rate / 1000.);
 			break;
 		case MP4_TRACK_TYPE_METADATA:
-			printf("  content encoding: %s\n",
-			       tk.metadata_content_encoding);
-			printf("  mime format: %s\n", tk.metadata_mime_format);
+			printf("  content encoding: %s\n", tk.content_encoding);
+			printf("  mime format: %s\n", tk.mime_format);
 			break;
 		default:
 			break;
+		}
+		if (tk.has_metadata) {
+			printf("  metadata: present\n");
+			printf("  metadata content encoding: %s\n",
+			       tk.metadata_content_encoding);
+			printf("  metadata mime format: %s\n",
+			       tk.metadata_mime_format);
 		}
 		duration_usec =
 			mp4_sample_time_to_usec(tk.duration, tk.timescale);
@@ -175,6 +174,7 @@ static void print_tracks(struct mp4_demux *demux)
 		printf("  duration: %02d:%02d:%02d\n", hrs, min, sec);
 		printf("  creation time: %s\n", creation_time_str);
 		printf("  modification time: %s\n", modification_time_str);
+		printf("  timescale: %" PRIu32 "\n", tk.timescale);
 
 		unsigned int meta_count = 0;
 		char **keys = NULL;
@@ -267,7 +267,7 @@ static void print_chapters(struct mp4_demux *demux)
 	ret = mp4_demux_get_chapters(
 		demux, &chapters_count, &chapters_time, &chapters_name);
 	if (ret < 0) {
-		ULOG_ERRNO("mp4_demux_get_metadata_cover", -ret);
+		ULOG_ERRNO("mp4_demux_get_chapters", -ret);
 		return;
 	}
 

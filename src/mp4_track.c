@@ -162,6 +162,7 @@ static int mp4_track_destroy(struct mp4_track *track)
 	if (track == NULL)
 		return 0;
 
+	mp4_video_decoder_config_destroy(&track->vdc);
 	free(track->timeToSampleEntries);
 	free(track->sampleDecodingTime);
 	free(track->sampleSize);
@@ -169,11 +170,13 @@ static int mp4_track_destroy(struct mp4_track *track)
 	free(track->sampleToChunkEntries);
 	free(track->sampleOffset);
 	free(track->syncSampleEntries);
-	free(track->videoSps);
-	free(track->videoPps);
 	free(track->audioSpecificConfig);
-	free(track->metadataContentEncoding);
-	free(track->metadataMimeFormat);
+	free(track->contentEncoding);
+	free(track->mimeFormat);
+	for (unsigned int i = 0; i < track->staticMetadataCount; i++) {
+		free(track->staticMetadataKey[i]);
+		free(track->staticMetadataValue[i]);
+	}
 	free(track->staticMetadataKey);
 	free(track->staticMetadataValue);
 	free(track->name);
