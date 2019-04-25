@@ -1,50 +1,40 @@
 /**
- * @file mp4_track.c
- * @brief MP4 file library - track related functions
- * @date 07/11/2016
- * @author aurelien.barre@akaaba.net
- *
- * Copyright (c) 2016 Aurelien Barre <aurelien.barre@akaaba.net>.
- * All rights reserved.
+ * Copyright (c) 2018 Parrot Drones SAS
+ * Copyright (c) 2016 Aurelien Barre
  *
  * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
+ * modification, are permitted provided that the following conditions are met:
  *   * Redistributions of source code must retain the above copyright
  *     notice, this list of conditions and the following disclaimer.
- *
  *   * Redistributions in binary form must reproduce the above copyright
- *     notice, this list of conditions and the following disclaimer in
- *     the documentation and/or other materials provided with the
- *     distribution.
+ *     notice, this list of conditions and the following disclaimer in the
+ *     documentation and/or other materials provided with the distribution.
+ *   * Neither the name of the copyright holders nor the names of its
+ *     contributors may be used to endorse or promote products derived from
+ *     this software without specific prior written permission.
  *
- *   * Neither the name of the copyright holder nor the names of the
- *     contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE FOR ANY
+ * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "mp4.h"
+#include "mp4_priv.h"
 
 
-int mp4_track_is_sync_sample(
-	struct mp4_track *track,
-	unsigned int sampleIdx,
-	int *prevSyncSampleIdx)
+int mp4_track_is_sync_sample(struct mp4_track *track,
+			     unsigned int sampleIdx,
+			     int *prevSyncSampleIdx)
 {
 	unsigned int i;
+
+	ULOG_ERRNO_RETURN_ERR_IF(track == NULL, EINVAL);
 
 	if (!track->syncSampleEntries)
 		return 1;
@@ -67,17 +57,15 @@ int mp4_track_is_sync_sample(
 }
 
 
-int mp4_track_find_sample_by_time(
-	struct mp4_track *track,
-	uint64_t time,
-	enum mp4_time_cmp cmp,
-	int sync,
-	int start)
+int mp4_track_find_sample_by_time(struct mp4_track *track,
+				  uint64_t time,
+				  enum mp4_time_cmp cmp,
+				  int sync,
+				  int start)
 {
 	int i, idx, is_sync, found = 0;
 
-	MP4_RETURN_ERR_IF_FAILED(track != NULL, -EINVAL);
-
+	ULOG_ERRNO_RETURN_ERR_IF(track == NULL, EINVAL);
 
 	switch (cmp) {
 	case MP4_TIME_CMP_EXACT:
@@ -109,9 +97,9 @@ int mp4_track_find_sample_by_time(
 			start = (int)track->sampleCount - 1;
 		for (i = start; i >= 0; i--, is_sync = 0) {
 			if (((cmp == MP4_TIME_CMP_LT) &&
-				(track->sampleDecodingTime[i] < time)) ||
-				((cmp == MP4_TIME_CMP_LT_EQ) &&
-				(track->sampleDecodingTime[i] <= time))) {
+			     (track->sampleDecodingTime[i] < time)) ||
+			    ((cmp == MP4_TIME_CMP_LT_EQ) &&
+			     (track->sampleDecodingTime[i] <= time))) {
 				if (sync) {
 					is_sync = mp4_track_is_sync_sample(
 						track, i, NULL);
@@ -132,9 +120,9 @@ int mp4_track_find_sample_by_time(
 			start = (int)track->sampleCount - 1;
 		for (i = start; i < (int)track->sampleCount; i++, is_sync = 0) {
 			if (((cmp == MP4_TIME_CMP_GT) &&
-				(track->sampleDecodingTime[i] > time)) ||
-				((cmp == MP4_TIME_CMP_GT_EQ) &&
-				(track->sampleDecodingTime[i] >= time))) {
+			     (track->sampleDecodingTime[i] > time)) ||
+			    ((cmp == MP4_TIME_CMP_GT_EQ) &&
+			     (track->sampleDecodingTime[i] >= time))) {
 				if (sync) {
 					is_sync = mp4_track_is_sync_sample(
 						track, i, NULL);
@@ -148,29 +136,31 @@ int mp4_track_find_sample_by_time(
 		}
 		break;
 	default:
-		MP4_RETURN_ERR_IF_FAILED(0, -EINVAL);
-		break;
+		ULOGE("unsupported comparison type: %d", cmp);
+		return -EINVAL;
 	}
 
 	return (found) ? idx : -ENOENT;
 }
 
 
-struct mp4_track *mp4_track_new(
-	void)
+static struct mp4_track *mp4_track_new(void)
 {
 	struct mp4_track *track = calloc(1, sizeof(*track));
-	MP4_RETURN_VAL_IF_FAILED(track != NULL, -ENOMEM, NULL);
+	if (track == NULL) {
+		ULOG_ERRNO("calloc", ENOMEM);
+		return NULL;
+	}
 	list_node_unref(&track->node);
 
 	return track;
 }
 
 
-int mp4_track_destroy(
-	struct mp4_track *track)
+static int mp4_track_destroy(struct mp4_track *track)
 {
-	MP4_RETURN_ERR_IF_FAILED(track != NULL, -EINVAL);
+	if (track == NULL)
+		return 0;
 
 	free(track->timeToSampleEntries);
 	free(track->sampleDecodingTime);
@@ -184,21 +174,27 @@ int mp4_track_destroy(
 	free(track->audioSpecificConfig);
 	free(track->metadataContentEncoding);
 	free(track->metadataMimeFormat);
+	free(track->staticMetadataKey);
+	free(track->staticMetadataValue);
+	free(track->name);
 	free(track);
+
 	return 0;
 }
 
 
-struct mp4_track *mp4_track_add(
-	struct mp4_file *mp4)
+struct mp4_track *mp4_track_add(struct mp4_file *mp4)
 {
-	MP4_RETURN_VAL_IF_FAILED(mp4 != NULL, -EINVAL, NULL);
+	ULOG_ERRNO_RETURN_VAL_IF(mp4 == NULL, EINVAL, NULL);
 
 	struct mp4_track *track = mp4_track_new();
-	MP4_RETURN_VAL_IF_FAILED(track != NULL, -ENOMEM, NULL);
-	list_node_unref(&track->node);
+	if (track == NULL) {
+		ULOG_ERRNO("mp4_track_new", ENOMEM);
+		return NULL;
+	}
+	list_node_unref(&track->node); /* TODO: remove */
 
-	/* add to the list */
+	/* Add to the list */
 	list_add_after(list_last(&mp4->tracks), &track->node);
 	mp4->trackCount++;
 
@@ -206,20 +202,20 @@ struct mp4_track *mp4_track_add(
 }
 
 
-int mp4_track_remove(
-	struct mp4_file *mp4,
-	struct mp4_track *track)
+int mp4_track_remove(struct mp4_file *mp4, struct mp4_track *track)
 {
 	struct mp4_track *_track = NULL;
 
-	MP4_RETURN_ERR_IF_FAILED(mp4 != NULL, -EINVAL);
-	MP4_RETURN_ERR_IF_FAILED(track != NULL, -EINVAL);
+	ULOG_ERRNO_RETURN_ERR_IF(mp4 == NULL, EINVAL);
+	ULOG_ERRNO_RETURN_ERR_IF(track == NULL, EINVAL);
 
 	_track = mp4_track_find(mp4, track);
-	MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(_track != track, -ENOENT,
-		"track not found");
+	if (_track != track) {
+		ULOG_ERRNO("mp4_track_find", ENOENT);
+		return -ENOENT;
+	}
 
-	/* remove from the list */
+	/* Remove from the list */
 	list_del(&track->node);
 	mp4->trackCount--;
 
@@ -227,101 +223,108 @@ int mp4_track_remove(
 }
 
 
-struct mp4_track *mp4_track_find(
-	struct mp4_file *mp4,
-	struct mp4_track *track)
+struct mp4_track *mp4_track_find(struct mp4_file *mp4, struct mp4_track *track)
 {
 	struct mp4_track *_track = NULL;
 	int found = 0;
 
-	MP4_RETURN_VAL_IF_FAILED(mp4 != NULL, -EINVAL, NULL);
-	MP4_RETURN_VAL_IF_FAILED(track != NULL, -EINVAL, NULL);
+	ULOG_ERRNO_RETURN_VAL_IF(mp4 == NULL, EINVAL, NULL);
+	ULOG_ERRNO_RETURN_VAL_IF(track == NULL, EINVAL, NULL);
 
-	list_walk_entry_forward(&mp4->tracks, _track, node) {
+	list_walk_entry_forward(&mp4->tracks, _track, node)
+	{
 		if (_track == track) {
 			found = 1;
 			break;
 		}
 	}
-	MP4_RETURN_VAL_IF_FAILED(found, -EINVAL, NULL);
+
+	if (!found)
+		return NULL;
 
 	return _track;
 }
 
 
-struct mp4_track *mp4_track_find_by_idx(
-	struct mp4_file *mp4,
-	unsigned int track_idx)
+struct mp4_track *mp4_track_find_by_idx(struct mp4_file *mp4,
+					unsigned int track_idx)
 {
 	struct mp4_track *_track = NULL;
 	int found = 0;
 	unsigned int k = 0;
 
-	MP4_RETURN_VAL_IF_FAILED(mp4 != NULL, -EINVAL, NULL);
+	ULOG_ERRNO_RETURN_VAL_IF(mp4 == NULL, EINVAL, NULL);
 
-	list_walk_entry_forward(&mp4->tracks, _track, node) {
+	list_walk_entry_forward(&mp4->tracks, _track, node)
+	{
 		if (k == track_idx) {
 			found = 1;
 			break;
 		}
 		k++;
 	}
-	MP4_RETURN_VAL_IF_FAILED(found, -EINVAL, NULL);
+
+	if (!found)
+		return NULL;
 
 	return _track;
 }
 
 
-struct mp4_track *mp4_track_find_by_id(
-	struct mp4_file *mp4,
-	unsigned int track_id)
+struct mp4_track *mp4_track_find_by_id(struct mp4_file *mp4,
+				       unsigned int track_id)
 {
 	struct mp4_track *_track = NULL;
 	int found = 0;
 
-	MP4_RETURN_VAL_IF_FAILED(mp4 != NULL, -EINVAL, NULL);
+	ULOG_ERRNO_RETURN_VAL_IF(mp4 == NULL, EINVAL, NULL);
 
-	list_walk_entry_forward(&mp4->tracks, _track, node) {
+	list_walk_entry_forward(&mp4->tracks, _track, node)
+	{
 		if (_track->id == track_id) {
 			found = 1;
 			break;
 		}
 	}
-	MP4_RETURN_VAL_IF_FAILED(found, -EINVAL, NULL);
+
+	if (!found)
+		return NULL;
 
 	return _track;
 }
 
 
-void mp4_tracks_destroy(
-	struct mp4_file *mp4)
+void mp4_tracks_destroy(struct mp4_file *mp4)
 {
 	struct mp4_track *track = NULL, *tmp = NULL;
-	list_walk_entry_forward_safe(&mp4->tracks, track, tmp, node) {
-		int ret = mp4_track_destroy(track);
-		if (ret != 0)
-			MP4_LOGE("mp4_track_destroy() failed: %d(%s)",
-				ret, strerror(-ret));
+
+	ULOG_ERRNO_RETURN_IF(mp4 == NULL, EINVAL);
+
+	list_walk_entry_forward_safe(&mp4->tracks, track, tmp, node)
+	{
+		mp4_track_destroy(track);
 	}
 }
 
 
-int mp4_tracks_build(
-	struct mp4_file *mp4)
+int mp4_tracks_build(struct mp4_file *mp4)
 {
 	struct mp4_track *tk = NULL, *videoTk = NULL;
 	struct mp4_track *metaTk = NULL, *chapTk = NULL;
 	int videoTrackCount = 0, audioTrackCount = 0, hintTrackCount = 0;
 	int metadataTrackCount = 0, textTrackCount = 0;
 
-	list_walk_entry_forward(&mp4->tracks, tk, node) {
+	ULOG_ERRNO_RETURN_ERR_IF(mp4 == NULL, EINVAL);
+
+	list_walk_entry_forward(&mp4->tracks, tk, node)
+	{
 		unsigned int i, j, k, n;
 		uint32_t lastFirstChunk = 1, lastSamplesPerChunk = 0;
 		uint32_t chunkCount, sampleCount = 0, chunkIdx;
 		uint64_t offsetInChunk;
 		for (i = 0; i < tk->sampleToChunkEntryCount; i++) {
 			chunkCount = tk->sampleToChunkEntries[i].firstChunk -
-				lastFirstChunk;
+				     lastFirstChunk;
 			sampleCount += chunkCount * lastSamplesPerChunk;
 			lastFirstChunk = tk->sampleToChunkEntries[i].firstChunk;
 			lastSamplesPerChunk =
@@ -331,38 +334,43 @@ int mp4_tracks_build(
 		sampleCount += chunkCount * lastSamplesPerChunk;
 
 		if (sampleCount != tk->sampleCount) {
-			MP4_LOGE("sample count mismatch: %d vs. %d",
-				sampleCount, tk->sampleCount);
+			ULOGE("sample count mismatch: %d, expected %d",
+			      sampleCount,
+			      tk->sampleCount);
 			return -EPROTO;
 		}
 
 		tk->sampleOffset = malloc(sampleCount * sizeof(uint64_t));
-		MP4_RETURN_ERR_IF_FAILED((tk->sampleOffset != NULL), -ENOMEM);
+		if (tk->sampleOffset == NULL) {
+			ULOG_ERRNO("malloc", ENOMEM);
+			return -ENOMEM;
+		}
 
 		lastFirstChunk = 1;
 		lastSamplesPerChunk = 0;
 		for (i = 0, n = 0, chunkIdx = 0;
-			i < tk->sampleToChunkEntryCount; i++) {
+		     i < tk->sampleToChunkEntryCount;
+		     i++) {
 			chunkCount = tk->sampleToChunkEntries[i].firstChunk -
-				lastFirstChunk;
+				     lastFirstChunk;
 			for (j = 0; j < chunkCount; j++, chunkIdx++) {
 				for (k = 0, offsetInChunk = 0;
-					k < lastSamplesPerChunk; k++, n++) {
+				     k < lastSamplesPerChunk;
+				     k++, n++) {
 					tk->sampleOffset[n] =
 						tk->chunkOffset[chunkIdx] +
 						offsetInChunk;
 					offsetInChunk += tk->sampleSize[n];
 				}
 			}
-			lastFirstChunk =
-				tk->sampleToChunkEntries[i].firstChunk;
+			lastFirstChunk = tk->sampleToChunkEntries[i].firstChunk;
 			lastSamplesPerChunk =
 				tk->sampleToChunkEntries[i].samplesPerChunk;
 		}
 		chunkCount = tk->chunkCount - lastFirstChunk + 1;
 		for (j = 0; j < chunkCount; j++, chunkIdx++) {
-			for (k = 0, offsetInChunk = 0;
-				k < lastSamplesPerChunk; k++, n++) {
+			for (k = 0, offsetInChunk = 0; k < lastSamplesPerChunk;
+			     k++, n++) {
 				tk->sampleOffset[n] =
 					tk->chunkOffset[chunkIdx] +
 					offsetInChunk;
@@ -370,24 +378,27 @@ int mp4_tracks_build(
 			}
 		}
 
-		for (i = 0, sampleCount = 0;
-			i < tk->timeToSampleEntryCount; i++)
+		for (i = 0, sampleCount = 0; i < tk->timeToSampleEntryCount;
+		     i++)
 			sampleCount += tk->timeToSampleEntries[i].sampleCount;
 
 		if (sampleCount != tk->sampleCount) {
-			MP4_LOGE("sample count mismatch: %d vs. %d",
-				sampleCount, tk->sampleCount);
+			ULOGE("sample count mismatch: %d, expected %d",
+			      sampleCount,
+			      tk->sampleCount);
 			return -EPROTO;
 		}
 
 		tk->sampleDecodingTime = malloc(sampleCount * sizeof(uint64_t));
-		MP4_RETURN_ERR_IF_FAILED(
-			(tk->sampleDecodingTime != NULL), -ENOMEM);
+		if (tk->sampleDecodingTime == NULL) {
+			ULOG_ERRNO("malloc", ENOMEM);
+			return -ENOMEM;
+		}
 
 		uint64_t ts = 0;
 		for (i = 0, k = 0; i < tk->timeToSampleEntryCount; i++) {
 			for (j = 0; j < tk->timeToSampleEntries[i].sampleCount;
-				j++, k++) {
+			     j++, k++) {
 				tk->sampleDecodingTime[k] = ts;
 				ts += tk->timeToSampleEntries[i].sampleDelta;
 			}
@@ -415,73 +426,74 @@ int mp4_tracks_build(
 			break;
 		}
 
-		/* link tracks using track references */
-		if ((tk->referenceType != 0) && (tk->referenceTrackId)) {
+		/* Link tracks using track references */
+		for (i = 0; i < tk->referenceTrackIdCount; i++) {
 			struct mp4_track *tkRef;
-			tkRef = mp4_track_find_by_id(mp4, tk->referenceTrackId);
-			if (tkRef) {
-				if ((tk->referenceType ==
-					MP4_REFERENCE_TYPE_DESCRIPTION)
-					&& (tk->type ==
-					MP4_TRACK_TYPE_METADATA)) {
-					tkRef->metadata = tk;
-					tk->ref = tkRef;
-				} else if ((tk->referenceType ==
-					MP4_REFERENCE_TYPE_CHAPTERS) &&
-					(tkRef->type == MP4_TRACK_TYPE_TEXT)) {
-					tk->chapters = tkRef;
-					tkRef->ref = tk;
-					tkRef->type = MP4_TRACK_TYPE_CHAPTERS;
-					chapTk = tkRef;
-				}
+			tkRef = mp4_track_find_by_id(mp4,
+						     tk->referenceTrackId[i]);
+			if (tkRef == NULL) {
+				ULOGW("track reference: track ID %d not found",
+				      tk->referenceTrackId[i]);
+				continue;
+			}
+
+			if ((tk->referenceType ==
+			     MP4_REFERENCE_TYPE_DESCRIPTION) &&
+			    (tk->type == MP4_TRACK_TYPE_METADATA)) {
+				tkRef->metadata = tk;
+			} else if ((tk->referenceType ==
+				    MP4_REFERENCE_TYPE_CHAPTERS) &&
+				   (tkRef->type == MP4_TRACK_TYPE_TEXT)) {
+				tk->chapters = tkRef;
+				tkRef->type = MP4_TRACK_TYPE_CHAPTERS;
+				chapTk = tkRef;
 			}
 		}
 	}
 
-	/* workaround: if we have only 1 video track and 1 metadata
+	/* Workaround: if we have only 1 video track and 1 metadata
 	 * track with no track reference, link them anyway */
-	if ((videoTrackCount == 1) && (metadataTrackCount == 1)
-			&& (audioTrackCount == 0) && (hintTrackCount == 0)
-			&& (videoTk) && (metaTk) && (!videoTk->metadata)) {
+	if ((videoTrackCount == 1) && (metadataTrackCount == 1) &&
+	    (audioTrackCount == 0) && (hintTrackCount == 0) && (videoTk) &&
+	    (metaTk) && (!videoTk->metadata))
 		videoTk->metadata = metaTk;
-		metaTk->ref = videoTk;
-	}
 
-	/* build the chapter list */
+	/* Build the chapter list */
 	if (chapTk) {
 		unsigned int i;
 		for (i = 0; i < chapTk->sampleCount; i++) {
 			unsigned int sampleSize, readBytes = 0;
 			uint16_t sz;
 			sampleSize = chapTk->sampleSize[i];
-			int _ret = fseeko(mp4->file,
-				chapTk->sampleOffset[i], SEEK_SET);
-			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(_ret == 0, -errno,
-				"failed to seek %" PRIu64
-				" bytes forward in file",
-				chapTk->sampleOffset[i]);
+			int _ret = fseeko(
+				mp4->file, chapTk->sampleOffset[i], SEEK_SET);
+			if (_ret != 0) {
+				ULOG_ERRNO("fseeko", errno);
+				return -errno;
+			}
 			MP4_READ_16(mp4->file, sz, readBytes);
 			sz = ntohs(sz);
 			if (sz <= sampleSize - readBytes) {
 				char *chapName = malloc(sz + 1);
-				MP4_RETURN_ERR_IF_FAILED(
-					(chapName != NULL), -ENOMEM);
+				if (chapName == NULL)
+					return -ENOMEM;
 				mp4->chaptersName[mp4->chaptersCount] =
 					chapName;
-				size_t count = fread(
-					chapName, sz, 1, mp4->file);
-				MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED(
-					(count == 1), -EIO,
-					"failed to read %u bytes from file",
-					sz);
+				size_t count =
+					fread(chapName, sz, 1, mp4->file);
+				if (count != 1) {
+					ULOG_ERRNO("fread", EIO);
+					return -EIO;
+				}
 				readBytes += sz;
 				chapName[sz] = '\0';
 				uint64_t chapTime = mp4_sample_time_to_usec(
 					chapTk->sampleDecodingTime[i],
 					chapTk->timescale);
-				MP4_LOGD("chapter #%d time=%" PRIu64 " '%s'",
-					mp4->chaptersCount + 1,
-					chapTime, chapName);
+				ULOGD("chapter #%d time=%" PRIu64 " '%s'",
+				      mp4->chaptersCount + 1,
+				      chapTime,
+				      chapName);
 				mp4->chaptersTime[mp4->chaptersCount] =
 					chapTime;
 				mp4->chaptersCount++;

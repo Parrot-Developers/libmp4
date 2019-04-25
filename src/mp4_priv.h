@@ -1,68 +1,60 @@
 /**
- * @file mp4.h
- * @brief MP4 file library
- * @date 07/11/2016
- * @author aurelien.barre@akaaba.net
- *
- * Copyright (c) 2016 Aurelien Barre <aurelien.barre@akaaba.net>.
- * All rights reserved.
+ * Copyright (c) 2018 Parrot Drones SAS
+ * Copyright (c) 2016 Aurelien Barre
  *
  * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
+ * modification, are permitted provided that the following conditions are met:
  *   * Redistributions of source code must retain the above copyright
  *     notice, this list of conditions and the following disclaimer.
- *
  *   * Redistributions in binary form must reproduce the above copyright
- *     notice, this list of conditions and the following disclaimer in
- *     the documentation and/or other materials provided with the
- *     distribution.
+ *     notice, this list of conditions and the following disclaimer in the
+ *     documentation and/or other materials provided with the distribution.
+ *   * Neither the name of the copyright holders nor the names of its
+ *     contributors may be used to endorse or promote products derived from
+ *     this software without specific prior written permission.
  *
- *   * Neither the name of the copyright holder nor the names of the
- *     contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE FOR ANY
+ * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef _MP4_H_
 #define _MP4_H_
 
 #ifndef ANDROID
-#ifndef _FILE_OFFSET_BITS
-#define _FILE_OFFSET_BITS 64
-#endif
+#	ifndef _FILE_OFFSET_BITS
+#		define _FILE_OFFSET_BITS 64
+#	endif
 #endif
 
+#include <ctype.h>
+#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
 
 #ifdef _WIN32
-#  include <winsock2.h>
+#	include <winsock2.h>
 #else /* !_WIN32 */
-#  include <arpa/inet.h>
+#	include <arpa/inet.h>
 #endif /* !_WIN32 */
 
-#include <libmp4.h>
+#define ULOG_TAG libmp4
+#include <ulog.h>
+
 #include <futils/futils.h>
+#include <libmp4.h>
 
-#include "mp4_log.h"
 
-
+/* clang-format off */
 #define MP4_UUID                            0x75756964 /* "uuid" */
 #define MP4_ROOT_BOX                        0x726f6f74 /* "root" */
 #define MP4_FILE_TYPE_BOX                   0x66747970 /* "ftyp" */
@@ -124,20 +116,22 @@
 #define MP4_METADATA_TAG_TYPE_VERSION       0x00737772 /* ".swr" */
 #define MP4_METADATA_TAG_TYPE_ENCODER       0x00746f6f /* ".too" */
 #define MP4_METADATA_TAG_TYPE_COVER         0x636f7672 /* "covr" */
+/* clang-format on */
 
-#define MP4_METADATA_KEY_COVER              "com.apple.quicktime.artwork"
+#define MP4_METADATA_KEY_COVER "com.apple.quicktime.artwork"
 
 #define MP4_MAC_TO_UNIX_EPOCH_OFFSET (0x7c25b080UL)
 
-#define MP4_CHAPTERS_MAX (100)
+#define MP4_CHAPTERS_MAX 100
+#define MP4_TRACK_REF_MAX 10
 
 
 enum mp4_time_cmp {
-	MP4_TIME_CMP_EXACT,	/* exact match */
-	MP4_TIME_CMP_LT,	/* less than */
-	MP4_TIME_CMP_GT,	/* greater than */
-	MP4_TIME_CMP_LT_EQ,	/* less than or equal */
-	MP4_TIME_CMP_GT_EQ,	/* greater than or equal */
+	MP4_TIME_CMP_EXACT, /* exact match */
+	MP4_TIME_CMP_LT, /* less than */
+	MP4_TIME_CMP_GT, /* greater than */
+	MP4_TIME_CMP_LT_EQ, /* less than or equal */
+	MP4_TIME_CMP_GT_EQ, /* greater than or equal */
 };
 
 
@@ -146,6 +140,7 @@ struct mp4_box {
 	uint32_t type;
 	uint64_t largesize;
 	uint8_t uuid[16];
+	unsigned int level;
 	struct mp4_box *parent;
 	struct list_node children;
 
@@ -188,7 +183,8 @@ struct mp4_track {
 	uint32_t syncSampleEntryCount;
 	uint32_t *syncSampleEntries;
 	uint32_t referenceType;
-	uint32_t referenceTrackId;
+	uint32_t referenceTrackId[MP4_TRACK_REF_MAX];
+	unsigned int referenceTrackIdCount;
 
 	enum mp4_video_codec videoCodec;
 	uint32_t videoWidth;
@@ -207,10 +203,17 @@ struct mp4_track {
 
 	char *metadataContentEncoding;
 	char *metadataMimeFormat;
+	unsigned int staticMetadataCount;
+	char **staticMetadataKey;
+	char **staticMetadataValue;
 
-	struct mp4_track *ref;
 	struct mp4_track *metadata;
 	struct mp4_track *chapters;
+
+	char *name;
+	int enabled;
+	int in_movie;
+	int in_preview;
 
 	struct list_node node;
 };
@@ -262,148 +265,97 @@ struct mp4_demux {
 };
 
 
-#define MP4_READ_32(_file, _val32, _readBytes) \
-	do { \
-		size_t _count = fread(&_val32, sizeof(uint32_t), 1, _file); \
-		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((_count == 1), -EIO, \
-			"failed to read %zu bytes from file", \
-			sizeof(uint32_t)); \
-		_readBytes += sizeof(uint32_t); \
+#define MP4_READ_32(_file, _val32, _readBytes)                                 \
+	do {                                                                   \
+		size_t _count = fread(&_val32, sizeof(uint32_t), 1, _file);    \
+		if (_count != 1) {                                             \
+			ULOG_ERRNO("fread", errno);                            \
+			return -errno;                                         \
+		}                                                              \
+		_readBytes += sizeof(uint32_t);                                \
 	} while (0)
 
-#define MP4_READ_16(_file, _val16, _readBytes) \
-	do { \
-		size_t _count = fread(&_val16, sizeof(uint16_t), 1, _file); \
-		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((_count == 1), -EIO, \
-			"failed to read %zu bytes from file", \
-			sizeof(uint16_t)); \
-		_readBytes += sizeof(uint16_t); \
+#define MP4_READ_16(_file, _val16, _readBytes)                                 \
+	do {                                                                   \
+		size_t _count = fread(&_val16, sizeof(uint16_t), 1, _file);    \
+		if (_count != 1) {                                             \
+			ULOG_ERRNO("fread", errno);                            \
+			return -errno;                                         \
+		}                                                              \
+		_readBytes += sizeof(uint16_t);                                \
 	} while (0)
 
-#define MP4_READ_8(_file, _val8, _readBytes) \
-	do { \
-		size_t _count = fread(&_val8, sizeof(uint8_t), 1, _file); \
-		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED((_count == 1), -EIO, \
-			"failed to read %zu bytes from file", \
-			sizeof(uint8_t)); \
-		_readBytes += sizeof(uint8_t); \
+#define MP4_READ_8(_file, _val8, _readBytes)                                   \
+	do {                                                                   \
+		size_t _count = fread(&_val8, sizeof(uint8_t), 1, _file);      \
+		if (_count != 1) {                                             \
+			ULOG_ERRNO("fread", errno);                            \
+			return -errno;                                         \
+		}                                                              \
+		_readBytes += sizeof(uint8_t);                                 \
 	} while (0)
 
-#define MP4_SKIP_BYTES(_file, _nBytes, _readBytes) \
-	do { \
-		int _ret = fseeko(_file, _nBytes, SEEK_CUR); \
-		MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED( \
-			_ret == 0, -errno, \
-			"failed to seek %" PRIi64 \
-			" bytes forward in file", \
-			(int64_t)_nBytes); \
-		_readBytes += _nBytes; \
+#define MP4_READ_SKIP(_file, _nBytes, _readBytes)                              \
+	do {                                                                   \
+		__typeof__(_readBytes) _i_nBytes = _nBytes;                    \
+		if (_i_nBytes > 0) {                                           \
+			int _ret = fseeko(_file, _i_nBytes, SEEK_CUR);         \
+			if (_ret != 0) {                                       \
+				ULOG_ERRNO("fseeko", errno);                   \
+				return -errno;                                 \
+			}                                                      \
+			_readBytes += _i_nBytes;                               \
+		}                                                              \
 	} while (0)
 
-#define MP4_SKIP(_file, _readBytes, _maxBytes) \
-	do { \
-		if (_readBytes < _maxBytes) { \
-			int _ret = fseeko(_file, \
-				_maxBytes - _readBytes, SEEK_CUR); \
-			MP4_LOG_ERR_AND_RETURN_ERR_IF_FAILED( \
-				_ret == 0, -errno, \
-				"failed to seek %" PRIi64 \
-				" bytes forward in file", \
-				(int64_t)_maxBytes - _readBytes); \
-			_readBytes = _maxBytes; \
-		} \
-	} while (0)
+struct mp4_box *mp4_box_new(struct mp4_box *parent);
 
 
-static inline uint64_t mp4_usec_to_sample_time(
-	uint64_t time,
-	uint32_t timescale)
-{
-	return (time * timescale + 500000) / 1000000;
-}
+int mp4_box_destroy(struct mp4_box *box);
 
 
-static inline uint64_t mp4_sample_time_to_usec(
-	uint64_t time,
-	uint32_t timescale)
-{
-	return (time * 1000000 + timescale / 2) / timescale;
-}
+void mp4_box_log(struct mp4_box *box, int level);
 
 
-struct mp4_box *mp4_box_new(
-	struct mp4_box *parent);
+off_t mp4_box_children_read(struct mp4_file *mp4,
+			    struct mp4_box *parent,
+			    off_t maxBytes,
+			    struct mp4_track *track);
 
 
-int mp4_box_destroy(
-	struct mp4_box *box);
+int mp4_track_is_sync_sample(struct mp4_track *track,
+			     unsigned int sampleIdx,
+			     int *prevSyncSampleIdx);
 
 
-void mp4_box_log(
-	struct mp4_box *box,
-	int indent,
-	int level);
+int mp4_track_find_sample_by_time(struct mp4_track *track,
+				  uint64_t time,
+				  enum mp4_time_cmp cmp,
+				  int sync,
+				  int start);
 
 
-off_t mp4_box_children_read(
-	struct mp4_file *mp4,
-	struct mp4_box *parent,
-	off_t maxBytes,
-	struct mp4_track *track);
+struct mp4_track *mp4_track_add(struct mp4_file *mp4);
 
 
-int mp4_track_is_sync_sample(
-	struct mp4_track *track,
-	unsigned int sampleIdx,
-	int *prevSyncSampleIdx);
+int mp4_track_remove(struct mp4_file *mp4, struct mp4_track *track);
 
 
-int mp4_track_find_sample_by_time(
-	struct mp4_track *track,
-	uint64_t time,
-	enum mp4_time_cmp cmp,
-	int sync,
-	int start);
+struct mp4_track *mp4_track_find(struct mp4_file *mp4, struct mp4_track *track);
 
 
-struct mp4_track *mp4_track_new(
-	void);
+struct mp4_track *mp4_track_find_by_idx(struct mp4_file *mp4,
+					unsigned int track_idx);
 
 
-int mp4_track_destroy(
-	struct mp4_track *track);
+struct mp4_track *mp4_track_find_by_id(struct mp4_file *mp4,
+				       unsigned int track_id);
 
 
-struct mp4_track *mp4_track_add(
-	struct mp4_file *mp4);
+void mp4_tracks_destroy(struct mp4_file *mp4);
 
 
-int mp4_track_remove(
-	struct mp4_file *mp4,
-	struct mp4_track *track);
-
-
-struct mp4_track *mp4_track_find(
-	struct mp4_file *mp4,
-	struct mp4_track *track);
-
-
-struct mp4_track *mp4_track_find_by_idx(
-	struct mp4_file *mp4,
-	unsigned int track_idx);
-
-
-struct mp4_track *mp4_track_find_by_id(
-	struct mp4_file *mp4,
-	unsigned int track_id);
-
-
-void mp4_tracks_destroy(
-	struct mp4_file *mp4);
-
-
-int mp4_tracks_build(
-	struct mp4_file *mp4);
+int mp4_tracks_build(struct mp4_file *mp4);
 
 
 #endif /* !_MP4_H_ */
