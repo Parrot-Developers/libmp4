@@ -29,7 +29,6 @@
 #	define _FILE_OFFSET_BITS 64
 #endif
 
-#include <arpa/inet.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

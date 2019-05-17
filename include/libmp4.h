@@ -79,6 +79,7 @@ enum mp4_metadata_cover_type {
 enum mp4_seek_method {
 	MP4_SEEK_METHOD_PREVIOUS = 0,
 	MP4_SEEK_METHOD_PREVIOUS_SYNC,
+	MP4_SEEK_METHOD_NEXT_SYNC,
 	MP4_SEEK_METHOD_NEAREST_SYNC,
 };
 

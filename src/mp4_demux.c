@@ -252,6 +252,16 @@ get_seek_sample(struct mp4_track *tk, int start, enum mp4_seek_method method)
 			return prev_sync;
 		else
 			return -ENOENT;
+	case MP4_SEEK_METHOD_NEXT_SYNC:
+		is_sync = mp4_track_is_sync_sample(tk, start, &prev_sync);
+		next_sync = mp4_track_find_sample_by_time(
+			tk, ts, MP4_TIME_CMP_GT, 1, start);
+		if (is_sync)
+			return start;
+		else if (next_sync >= 0)
+			return next_sync;
+		else
+			return -ENOENT;
 	case MP4_SEEK_METHOD_NEAREST_SYNC:
 		is_sync = mp4_track_is_sync_sample(tk, start, &prev_sync);
 		next_sync = mp4_track_find_sample_by_time(
