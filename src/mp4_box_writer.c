@@ -106,7 +106,7 @@ mp4_box_mvhd_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 	off_t boxSize = 120;
 	uint32_t val32;
 	uint16_t val16;
-	size_t skip;
+	size_t zeroes;
 
 	if (mux == NULL || box == NULL || box->writer.args == NULL)
 		return -EINVAL;
@@ -156,22 +156,22 @@ mp4_box_mvhd_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 	MP4_WRITE_16(mux->file, val16, bytesWritten, maxBytes);
 
 	/* 10 bytes Reserved */
-	skip = 10;
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	zeroes = 10;
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 
 	/* Matrix */
 	val32 = htonl(0x00010000);
 	MP4_WRITE_32(mux->file, val32, bytesWritten, maxBytes);
-	skip = 12;
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	zeroes = 12;
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 	MP4_WRITE_32(mux->file, val32, bytesWritten, maxBytes);
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 	val32 = htonl(0x40000000);
 	MP4_WRITE_32(mux->file, val32, bytesWritten, maxBytes);
 
 	/* Pre defined */
-	skip = 24;
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	zeroes = 24;
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 
 	/* Next track id */
 	val32 = htonl(args->track_count + 1);
@@ -194,7 +194,7 @@ mp4_box_tkhd_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 	off_t boxSize = 104;
 	uint32_t val32;
 	uint16_t val16;
-	size_t skip;
+	size_t zeroes;
 	uint32_t width, height;
 	uint16_t volume;
 	uint32_t version_flags;
@@ -235,8 +235,8 @@ mp4_box_tkhd_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 	MP4_WRITE_32(mux->file, val32, bytesWritten, maxBytes);
 
 	/* Reserved */
-	skip = 4;
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	zeroes = 4;
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 
 	/* 'duration' */
 	val32 = htonl(track->duration_moov >> 32);
@@ -245,8 +245,8 @@ mp4_box_tkhd_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 	MP4_WRITE_32(mux->file, val32, bytesWritten, maxBytes);
 
 	/* Reserved */
-	skip = 8;
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	zeroes = 8;
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 
 	/* 'layer' & 'alternate_group' */
 	val32 = htonl(0);
@@ -258,16 +258,16 @@ mp4_box_tkhd_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 	MP4_WRITE_16(mux->file, val16, bytesWritten, maxBytes);
 
 	/* Reserved */
-	skip = 2;
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	zeroes = 2;
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 
 	/* Matrix */
 	val32 = htonl(0x00010000);
 	MP4_WRITE_32(mux->file, val32, bytesWritten, maxBytes);
-	skip = 12;
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	zeroes = 12;
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 	MP4_WRITE_32(mux->file, val32, bytesWritten, maxBytes);
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 	val32 = htonl(0x40000000);
 	MP4_WRITE_32(mux->file, val32, bytesWritten, maxBytes);
 
@@ -398,7 +398,7 @@ mp4_box_vmhd_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 	off_t bytesWritten = 0;
 	off_t boxSize = 20;
 	uint32_t val32;
-	size_t skip;
+	size_t zeroes;
 
 	if (mux == NULL || box == NULL)
 		return -EINVAL;
@@ -416,8 +416,8 @@ mp4_box_vmhd_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 	MP4_WRITE_32(mux->file, val32, bytesWritten, maxBytes);
 
 	/* 'graphicsmode' & 'opcolor' */
-	skip = 8;
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	zeroes = 8;
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 
 	MP4_WRITE_CHECK_SIZE(mux->file, boxSize, bytesWritten);
 
@@ -502,7 +502,7 @@ mp4_box_hdlr_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 	off_t boxSize = 32; /* Box size excluding name length */
 	uint32_t val32;
 	uint8_t val8;
-	size_t skip;
+	size_t zeroes;
 	uint32_t handler_type;
 	const char *name;
 	size_t namelen;
@@ -548,16 +548,16 @@ mp4_box_hdlr_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 	MP4_WRITE_32(mux->file, val32, bytesWritten, maxBytes);
 
 	/* Pre defined */
-	skip = 4;
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	zeroes = 4;
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 
 	/* 'handler_type' */
 	val32 = htonl(handler_type);
 	MP4_WRITE_32(mux->file, val32, bytesWritten, maxBytes);
 
 	/* Reserved */
-	skip = 12;
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	zeroes = 12;
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 
 	/* 'name' (including terminating NULL) */
 	for (size_t i = 0; i < namelen; i++) {
@@ -897,7 +897,7 @@ mp4_box_esds_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 	uint32_t val32;
 	uint16_t val16;
 	uint8_t val8;
-	size_t skip;
+	size_t zeroes;
 
 
 	uint32_t esd_size, esd_size_len;
@@ -1013,8 +1013,8 @@ mp4_box_esds_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 	MP4_WRITE_8(mux->file, val8, bytesWritten, maxBytes);
 
 	/* 'bufferSizeDB', 'maxBitrate' & 'avgBitrate' can be set as zero */
-	skip = 11;
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	zeroes = 11;
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 
 	/* Decoder Specific Info (DSI) 'tag' */
 	val8 = 0x05;
@@ -1084,7 +1084,7 @@ static off_t mp4_video_decoder_config_write(struct mp4_mux *mux,
 	off_t res = 0;
 	uint32_t val32;
 	uint16_t val16;
-	size_t skip;
+	size_t zeroes;
 
 	if (mux == NULL || box == NULL || box->writer.args == NULL)
 		return -EINVAL;
@@ -1111,16 +1111,16 @@ static off_t mp4_video_decoder_config_write(struct mp4_mux *mux,
 	}
 
 	/* Reserved */
-	skip = 6;
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	zeroes = 6;
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 
 	/* Data reference index */
 	val16 = htons(1);
 	MP4_WRITE_16(mux->file, val16, bytesWritten, maxBytes);
 
 	/* Pre defined & reserved */
-	skip = 16;
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	zeroes = 16;
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 
 	/* 'width' & 'height' */
 	val16 = htons(track->video.width);
@@ -1134,16 +1134,16 @@ static off_t mp4_video_decoder_config_write(struct mp4_mux *mux,
 	MP4_WRITE_32(mux->file, val32, bytesWritten, maxBytes);
 
 	/* Reserved */
-	skip = 4;
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	zeroes = 4;
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 
 	/* 'frame_count' */
 	val16 = htons(1);
 	MP4_WRITE_16(mux->file, val16, bytesWritten, maxBytes);
 
 	/* 'Compressorname' */
-	skip = 32;
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	zeroes = 32;
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 
 	/* 'depth' */
 	val16 = htons(0x0018);
@@ -1187,7 +1187,7 @@ mp4_box_mp4a_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 	off_t res;
 	uint32_t val32;
 	uint16_t val16;
-	size_t skip;
+	size_t zeroes;
 
 	if (mux == NULL || box == NULL || box->writer.args == NULL)
 		return -EINVAL;
@@ -1203,16 +1203,16 @@ mp4_box_mp4a_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 	MP4_WRITE_32(mux->file, val32, bytesWritten, maxBytes);
 
 	/* Reserved */
-	skip = 6;
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	zeroes = 6;
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 
 	/* Data reference index */
 	val16 = htons(1);
 	MP4_WRITE_16(mux->file, val16, bytesWritten, maxBytes);
 
 	/* Reserved */
-	skip = 8;
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	zeroes = 8;
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 
 	/* 'channelcount' */
 	val16 = htons(2);
@@ -1223,8 +1223,8 @@ mp4_box_mp4a_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 	MP4_WRITE_16(mux->file, val16, bytesWritten, maxBytes);
 
 	/* Pre-defined & reserved */
-	skip = 4;
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	zeroes = 4;
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 
 	/* 'samplerate' */
 	val32 = htonl(track->audio.sample_rate);
@@ -1258,7 +1258,7 @@ mp4_box_mett_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 	uint32_t val32;
 	uint16_t val16;
 	uint8_t val8;
-	size_t skip;
+	size_t zeroes;
 
 	if (mux == NULL || box == NULL || box->writer.args == NULL)
 		return -EINVAL;
@@ -1281,8 +1281,8 @@ mp4_box_mett_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 	MP4_WRITE_32(mux->file, val32, bytesWritten, maxBytes);
 
 	/* Reserved */
-	skip = 6;
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	zeroes = 6;
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 
 	/* Data reference index */
 	val16 = htons(1);
@@ -1963,7 +1963,7 @@ static off_t mp4_box_meta_udta_write(struct mp4_mux *mux,
 	off_t boxSize = 0; /* Box size can't be determined here */
 	off_t res;
 	uint32_t val32;
-	size_t skip;
+	size_t zeroes;
 
 	if (mux == NULL || box == NULL || box->writer.args == NULL)
 		return -EINVAL;
@@ -2005,8 +2005,8 @@ static off_t mp4_box_meta_udta_write(struct mp4_mux *mux,
 	MP4_WRITE_32(mux->file, val32, bytesWritten, maxBytes);
 
 	/* Handler sub-box Reserved & 'name' */
-	skip = 9;
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	zeroes = 9;
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 
 	/* Ilst sub-box */
 	res = mp4_box_ilst_write(
@@ -2033,7 +2033,7 @@ mp4_box_meta_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 	off_t boxSize = 0; /* can't determine here */
 	off_t res;
 	uint32_t val32;
-	size_t skip;
+	size_t zeroes;
 
 	if (mux == NULL || box == NULL || box->writer.args == NULL)
 		return -EINVAL;
@@ -2067,8 +2067,8 @@ mp4_box_meta_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 	MP4_WRITE_32(mux->file, val32, bytesWritten, maxBytes);
 
 	/* Handler sub-box Reserved &'name' */
-	skip = 13;
-	MP4_WRITE_SKIP(mux->file, skip, bytesWritten, maxBytes);
+	zeroes = 13;
+	MP4_WRITE_ZEROES(mux->file, zeroes, bytesWritten, maxBytes);
 
 	/* Keys sub-box */
 	res = mp4_box_keys_write(mux, box, maxBytes - bytesWritten);

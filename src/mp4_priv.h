@@ -509,6 +509,34 @@ struct mp4_mux {
 	} while (0)
 
 
+#define MP4_WRITE_ZEROES_CHUNK_SIZE 64
+
+#define MP4_WRITE_ZEROES(_file, _byteCount, _writeBytes, _maxBytes)            \
+	do {                                                                   \
+		__typeof__(_byteCount) _i_nBytes = _byteCount;                 \
+		if (_writeBytes + _i_nBytes > _maxBytes)                       \
+			return -ENOSPC;                                        \
+		uint8_t _i_zeroes[MP4_WRITE_ZEROES_CHUNK_SIZE] = {0};          \
+		__typeof__(_byteCount) _i_nZeroes =                            \
+			_i_nBytes < MP4_WRITE_ZEROES_CHUNK_SIZE                \
+				? _i_nBytes                                    \
+				: MP4_WRITE_ZEROES_CHUNK_SIZE;                 \
+		while (_i_nZeroes > 0) {                                       \
+			size_t _count =                                        \
+				fwrite(&_i_zeroes, 1, _i_nZeroes, _file);      \
+			if (_count != _i_nZeroes) {                            \
+				ULOG_ERRNO("fwrite", errno);                   \
+				return -errno;                                 \
+			}                                                      \
+			_writeBytes += _i_nZeroes;                             \
+			_i_nBytes -= _i_nZeroes;                               \
+			_i_nZeroes = _i_nBytes < MP4_WRITE_ZEROES_CHUNK_SIZE   \
+					     ? _i_nBytes                       \
+					     : MP4_WRITE_ZEROES_CHUNK_SIZE;    \
+		}                                                              \
+	} while (0)
+
+
 #define MP4_WRITE_CHECK_SIZE(_file, _computedSize, _actualSize)                \
 	do {                                                                   \
 		if (_computedSize != _actualSize) {                            \
