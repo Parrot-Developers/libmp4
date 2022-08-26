@@ -27,7 +27,6 @@
 
 #include "mp4_priv.h"
 
-ULOG_DECLARE_TAG(libmp4);
 
 
 const char *mp4_track_type_str(enum mp4_track_type type)

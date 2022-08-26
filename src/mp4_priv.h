@@ -44,16 +44,25 @@
 
 #ifdef _WIN32
 #	include <winsock2.h>
+#	include <sys/types.h>
+	#ifdef _WIN64
+	#	define fseeko _fseeki64
+	#	define ftello _ftelli64
+	#else
+	#	define fseeko fseek
+	#	define ftello ftell
+	#endif
 #else /* !_WIN32 */
 #	include <arpa/inet.h>
 #endif /* !_WIN32 */
 
 #define ULOG_TAG libmp4
-#include <ulog.h>
+#include "libmp4.h"
+#include "list.h"
+#include "ulog.h"
 
-#include <futils/futils.h>
-#include <libmp4.h>
 
+#pragma comment(lib, "Ws2_32.lib")
 
 /* clang-format off */
 #define MP4_ISOM                            0x69736f6d /* "isom" */
@@ -62,6 +71,7 @@
 #define MP4_AVC1                            0x61766331 /* "avc1" */
 #define MP4_HVC1                            0x68766331 /* "hvc1" */
 #define MP4_MP4A                            0x6d703461 /* "mp4a" */
+#define MP4_MP4V                            0x6d703476 /* "mp4v" */
 #define MP4_UUID                            0x75756964 /* "uuid" */
 #define MP4_MHLR                            0x6d686c72 /* "mhlr" */
 #define MP4_ROOT_BOX                        0x726f6f74 /* "root" */
@@ -268,8 +278,8 @@ struct mp4_track {
 
 struct mp4_file {
 	FILE *file;
-	off_t fileSize;
-	off_t readBytes;
+	ptrdiff_t fileSize;
+	ptrdiff_t readBytes;
 	struct mp4_box *root;
 	struct list_node tracks;
 	unsigned int trackCount;
@@ -445,11 +455,10 @@ struct mp4_mux {
 
 #define MP4_READ_SKIP(_file, _nBytes, _readBytes)                              \
 	do {                                                                   \
-		__typeof__(_readBytes) _i_nBytes = _nBytes;                    \
+		size_t _i_nBytes = _nBytes;                                    \
 		if (_i_nBytes > 0) {                                           \
 			int _ret = fseeko(_file, _i_nBytes, SEEK_CUR);         \
 			if (_ret != 0) {                                       \
-				ULOG_ERRNO("fseeko", errno);                   \
 				return -errno;                                 \
 			}                                                      \
 			_readBytes += _i_nBytes;                               \
@@ -498,16 +507,15 @@ struct mp4_mux {
 
 #define MP4_WRITE_SKIP(_file, _byteCount, _writeBytes, _maxBytes)              \
 	do {                                                                   \
-		__typeof__(_byteCount) _i_nBytes = _byteCount;                 \
+		size_t _i_nBytes = _byteCount;                                 \
 		if (_writeBytes + _i_nBytes > _maxBytes)                       \
 			return -ENOSPC;                                        \
 		if (fseeko(_file, _i_nBytes, SEEK_CUR) != 0) {                 \
-			ULOG_ERRNO("fseeko", errno);                           \
+			ULOG_ERRNO("fseek", errno);                            \
 			return -errno;                                         \
 		}                                                              \
 		_writeBytes += _i_nBytes;                                      \
 	} while (0)
-
 
 #define MP4_WRITE_CHECK_SIZE(_file, _computedSize, _actualSize)                \
 	do {                                                                   \
@@ -519,7 +527,7 @@ struct mp4_mux {
 				      (size_t)_actualSize,                     \
 				      (size_t)_computedSize);                  \
 			if (fseeko(_file, -_actualSize, SEEK_CUR) != 0) {      \
-				ULOG_ERRNO("fseeko", errno);                   \
+				ULOG_ERRNO("fseeko", errno);                    \
 				return -errno;                                 \
 			}                                                      \
 			size_t _count =                                        \
@@ -531,7 +539,7 @@ struct mp4_mux {
 			if (fseeko(_file,                                      \
 				   _actualSize - sizeof(uint32_t),             \
 				   SEEK_CUR) != 0) {                           \
-				ULOG_ERRNO("fseeko", errno);                   \
+				ULOG_ERRNO("fseeko", errno);                    \
 				return -errno;                                 \
 			}                                                      \
 		}                                                              \
@@ -592,9 +600,9 @@ void mp4_box_destroy(struct mp4_box *box);
 void mp4_box_log(struct mp4_box *box, int level);
 
 
-off_t mp4_box_children_read(struct mp4_file *mp4,
+ptrdiff_t mp4_box_children_read(struct mp4_file *mp4,
 			    struct mp4_box *parent,
-			    off_t maxBytes,
+			    ptrdiff_t maxBytes,
 			    struct mp4_track *track);
 
 

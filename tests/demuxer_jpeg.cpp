@@ -34,12 +34,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <iostream>
 
 #define ULOG_TAG mp4_demux_test
-ULOG_DECLARE_TAG(mp4_demux_test);
-
-//#include <futils/futils.h>
 #include "libmp4.h"
+#include "list.h"
+#include "ulog.h"
 
 
 #define DATE_SIZE 26
@@ -49,7 +49,7 @@ ULOG_DECLARE_TAG(mp4_demux_test);
 #define WRITE_COVER 0
 
 /* Enable to log all frames */
-#define LOG_FRAMES 0
+#define LOG_FRAMES 1
 
 
 static void print_info(struct mp4_demux *demux)
@@ -65,7 +65,7 @@ static void print_info(struct mp4_demux *demux)
 
 	char creation_time_str[DATE_SIZE + 1];
 	char modification_time_str[DATE_SIZE + 1];
-	time_local_format(info.creation_time,
+	/*time_local_format(info.creation_time,
 			  0,
 			  TIME_FMT_LONG,
 			  creation_time_str,
@@ -74,7 +74,7 @@ static void print_info(struct mp4_demux *demux)
 			  0,
 			  TIME_FMT_LONG,
 			  modification_time_str,
-			  DATE_SIZE);
+			  DATE_SIZE);*/
 
 	printf("Media\n");
 	unsigned int hrs =
@@ -112,7 +112,7 @@ static void print_tracks(struct mp4_demux *demux)
 
 		char creation_time_str[DATE_SIZE + 1];
 		char modification_time_str[DATE_SIZE + 1];
-		time_local_format(tk.creation_time,
+		/*time_local_format(tk.creation_time,
 				  0,
 				  TIME_FMT_LONG,
 				  creation_time_str,
@@ -121,7 +121,7 @@ static void print_tracks(struct mp4_demux *demux)
 				  0,
 				  TIME_FMT_LONG,
 				  modification_time_str,
-				  DATE_SIZE);
+				  DATE_SIZE);*/
 
 		printf("Track #%d ID=%d\n", i, tk.id);
 		printf("  type: %s\n", mp4_track_type_str(tk.type));
@@ -228,7 +228,7 @@ static void print_metadata(struct mp4_demux *demux)
 
 	if (cover_size > 0) {
 		cover_buffer_size = cover_size;
-		cover_buffer = malloc(cover_buffer_size);
+		cover_buffer = (uint8_t *)malloc(cover_buffer_size);
 		if (!cover_buffer)
 			return;
 
@@ -293,6 +293,43 @@ static void print_chapters(struct mp4_demux *demux)
 	printf("\n");
 }
 
+static void print_seek(struct mp4_demux *demux)
+{
+	struct mp4_track_info tk;
+	struct mp4_track_sample sample;
+	int i, count, ret, found = 0;
+	unsigned int id;
+
+	count = mp4_demux_get_track_count(demux);
+	if (count < 0) {
+		ULOG_ERRNO("mp4_demux_get_track_count", -count);
+		return;
+	}
+
+	for (i = 0; i < count; i++) {
+		ret = mp4_demux_get_track_info(demux, i, &tk);
+		if ((ret == 0) && (tk.type == MP4_TRACK_TYPE_VIDEO)) {
+			id = tk.id;
+			found = 1;
+			break;
+		}
+	}
+	printf("found: %d\n", found);
+	if (!found)
+		return;
+	
+	uint64_t skipMsecsInFile = 1622;
+	uint64_t time_offset_usec = skipMsecsInFile * 1000;
+	int seekedToFrame = -1;
+	int returnCode =
+		mp4_demux_seek_jpeg(demux,
+			       time_offset_usec,
+			       mp4_seek_method::MP4_SEEK_METHOD_NEXT_SYNC,
+			       &seekedToFrame);
+	std::cout << "returnCode<" << returnCode << ">\n";
+	// to determine the end of video
+	std::cout<< "offset <" << time_offset_usec << "> frame no<" << seekedToFrame << ">\n";
+ }
 
 static void print_frames(struct mp4_demux *demux)
 {
@@ -315,7 +352,7 @@ static void print_frames(struct mp4_demux *demux)
 			break;
 		}
 	}
-
+	printf("%d", found);
 	if (!found)
 		return;
 
@@ -323,12 +360,69 @@ static void print_frames(struct mp4_demux *demux)
 	do {
 		ret = mp4_demux_get_track_sample(
 			demux, id, 1, NULL, 0, NULL, 0, &sample);
-		if (ret < 0) {
+		if (ret < 0 || sample.size == 0) {
+			printf("sample size is zero %d", sample.size);
 			ULOG_ERRNO("mp4_demux_get_track_sample", -ret);
 			i++;
-			continue;
+			break;
+		}
+		int timescale = tk.timescale;
+		uint64_t sample_ts = mp4_sample_time_to_usec(sample.dts, timescale);
+		printf("size=>%d\n", sample.size);
+		printf("Frame #%d size=%06" PRIu32 " metadata_size=%" PRIu32
+		       " dts=%" PRIu64 " next_dts=%" PRIu64 " sync=%d ts=%" PRIu32 "\n",
+		       i,
+		       sample.size,
+		       sample.metadata_size,
+		       sample.dts,
+		       sample.next_dts,
+		       sample.sync,
+			   sample_ts);
+		i++;
+		printf("track sample %d\n", i);
+	} while (sample.size);
+
+	printf("done");
+	printf("\n");
+}
+
+static void print_ith_frames(struct mp4_demux *demux)
+{
+	struct mp4_track_info tk;
+	struct mp4_track_sample sample;
+	int i, count, ret, found = 0;
+	unsigned int id;
+
+	count = mp4_demux_get_track_count(demux);
+	if (count < 0) {
+		ULOG_ERRNO("mp4_demux_get_track_count", -count);
+		return;
+	}
+
+	for (i = 0; i < count; i++) {
+		ret = mp4_demux_get_track_info(demux, i, &tk);
+		if ((ret == 0) && (tk.type == MP4_TRACK_TYPE_VIDEO)) {
+			id = tk.id;
+			found = 1;
+			break;
+		}
+	}
+	printf("%d", found);
+	if (!found)
+		return;
+
+	i = 0;
+	do {
+		ret = mp4_demux_get_track_sample(
+			demux, id, 1, NULL, 0, NULL, 0, &sample);
+		if (ret < 0 || sample.size == 0) {
+			printf("sample size is zero %d", sample.size);
+			ULOG_ERRNO("mp4_demux_get_track_sample", -ret);
+			i++;
+			break;
 		}
 
+		printf("size=>%d\n", sample.size);
 		printf("Frame #%d size=%06" PRIu32 " metadata_size=%" PRIu32
 		       " dts=%" PRIu64 " next_dts=%" PRIu64 " sync=%d\n",
 		       i,
@@ -338,11 +432,12 @@ static void print_frames(struct mp4_demux *demux)
 		       sample.next_dts,
 		       sample.sync);
 		i++;
+		printf("track sample %d\n", i);
 	} while (sample.size);
 
+	printf("done");
 	printf("\n");
 }
-
 
 static void welcome(char *prog_name)
 {
@@ -373,13 +468,14 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
-	time_get_monotonic(&ts);
-	time_timespec_to_us(&ts, &start_time);
+	//time_get_monotonic(&ts);
+	//time_timespec_to_us(&ts, &start_time);
 
+	printf("opening demux\n");
 	ret = mp4_demux_open(argv[1], &demux);
-
-	time_get_monotonic(&ts);
-	time_timespec_to_us(&ts, &end_time);
+	printf("demux open\n");
+	//time_get_monotonic(&ts);
+	//time_timespec_to_us(&ts, &end_time);
 
 	if (ret < 0) {
 		ULOG_ERRNO("mp4_demux_open", -ret);
@@ -390,16 +486,19 @@ int main(int argc, char **argv)
 	printf("File '%s'\n", argv[1]);
 	printf("Processing time: %.2fms\n\n",
 	       (float)(end_time - start_time) / 1000.);
-	print_info(demux);
-	print_tracks(demux);
-	print_metadata(demux);
-	print_chapters(demux);
+	/*print_info(demux);
+	print_tracks(demux);*/
+	print_seek(demux);
+	//print_metadata(demux);
+	// print_chapters(demux);
 #if LOG_FRAMES
-	print_frames(demux);
+	//print_frames(demux);
+	printf("print frames done\n");
 #endif /* LOG_FRAMES */
 
 cleanup:
 	if (demux != NULL) {
+		printf("closing the demux\n");
 		ret = mp4_demux_close(demux);
 		if (ret < 0) {
 			ULOG_ERRNO("mp4_demux_close", -ret);

@@ -1,0 +1,5 @@
+_build
+data
+.vscode
+ffmpeg_cmd.txt
+Mnotes.txt

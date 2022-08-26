@@ -48,7 +48,7 @@
 	} while (0)
 
 
-struct mp4_box *mp4_box_new(struct mp4_box *parent)
+struct mp4_box *mp4_box_new(struct mp4_box *parent) // allocate memory for mp4_box set parent
 {
 	struct mp4_box *box = calloc(1, sizeof(*box));
 	if (box == NULL) {
@@ -74,7 +74,8 @@ void mp4_box_destroy(struct mp4_box *box)
 		return;
 
 	struct mp4_box *child = NULL, *tmp = NULL;
-	list_walk_entry_forward_safe(&box->children, child, tmp, node)
+	struct list_node *start = &box->children;
+	custom_safe_walk(start, child, tmp, node, struct mp4_box)
 	{
 		mp4_box_destroy(child);
 	}
@@ -124,7 +125,9 @@ static void mp4_box_log_internal(struct mp4_box *box,
 
 	struct mp4_box *child = NULL;
 	level_bf |= UINT64_C(1) << indent;
-	list_walk_entry_forward(&box->children, child, node)
+	struct list_node *start = &box->children;
+
+	custom_walk(start, child, node, struct mp4_box)
 	{
 		mp4_box_log_internal(child,
 				     level,
@@ -1563,6 +1566,9 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 				}
 				boxReadBytes += ret;
 				break;
+			case MP4_AUDIO_DECODER_CONFIG_BOX:
+				printf("\nWarning: skipping stsd box\n");
+				break;
 			default:
 				ULOGE("unsupported decoder config box");
 				return -ENOSYS;
@@ -2514,12 +2520,12 @@ static off_t mp4_box_meta_data_read(struct mp4_file *mp4,
 }
 
 
-off_t mp4_box_children_read(struct mp4_file *mp4,
+ptrdiff_t mp4_box_children_read(struct mp4_file *mp4,
 			    struct mp4_box *parent,
-			    off_t maxBytes,
+			    ptrdiff_t maxBytes,
 			    struct mp4_track *track)
 {
-	off_t parentReadBytes = 0;
+	ptrdiff_t parentReadBytes = 0;
 	int ret = 0, firstBox = 1, lastBox = 0;
 
 	ULOG_ERRNO_RETURN_ERR_IF(mp4 == NULL, EINVAL);
@@ -2527,7 +2533,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 
 	while ((!feof(mp4->file)) && (!lastBox) &&
 	       (parentReadBytes + 8 < maxBytes)) {
-		off_t boxReadBytes = 0, realBoxSize;
+		ptrdiff_t boxReadBytes = 0, realBoxSize;
 		uint32_t val32;
 
 		/* Keep the box in the tree */
@@ -2554,11 +2560,14 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		}
 
 		if ((parent->type == MP4_ILST_BOX) &&
-		    (box->type <= mp4->metaMetadataCount))
+			(box->type <= mp4->metaMetadataCount))
+		{
 			ULOGD("offset 0x%" PRIx64 " metadata box size %" PRIu32,
 			      (int64_t)ftello(mp4->file) - 8,
 			      box->size);
+		}
 		else
+		{
 			ULOGD("offset 0x%" PRIx64
 			      " box '%c%c%c%c' size %" PRIu32,
 			      (int64_t)ftello(mp4->file) - 8,
@@ -2567,7 +2576,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			      (box->type >> 8) & 0xFF,
 			      box->type & 0xFF,
 			      box->size);
-
+		}
 		if (box->size == 0) {
 			/* Box extends to end of file */
 			lastBox = 1;

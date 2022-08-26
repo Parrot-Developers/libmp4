@@ -234,7 +234,8 @@ struct mp4_track *mp4_track_find(struct mp4_file *mp4, struct mp4_track *track)
 	ULOG_ERRNO_RETURN_VAL_IF(mp4 == NULL, EINVAL, NULL);
 	ULOG_ERRNO_RETURN_VAL_IF(track == NULL, EINVAL, NULL);
 
-	list_walk_entry_forward(&mp4->tracks, _track, node)
+	struct list_node *start = &mp4->tracks;
+	custom_walk(start, _track, node, struct mp4_track)
 	{
 		if (_track == track) {
 			found = 1;
@@ -258,7 +259,8 @@ struct mp4_track *mp4_track_find_by_idx(struct mp4_file *mp4,
 
 	ULOG_ERRNO_RETURN_VAL_IF(mp4 == NULL, EINVAL, NULL);
 
-	list_walk_entry_forward(&mp4->tracks, _track, node)
+	struct list_node *start = &mp4->tracks;
+	custom_walk(start, _track, node, struct mp4_track)
 	{
 		if (k == track_idx) {
 			found = 1;
@@ -282,7 +284,8 @@ struct mp4_track *mp4_track_find_by_id(struct mp4_file *mp4,
 
 	ULOG_ERRNO_RETURN_VAL_IF(mp4 == NULL, EINVAL, NULL);
 
-	list_walk_entry_forward(&mp4->tracks, _track, node)
+	struct list_node *start = &mp4->tracks;
+	custom_walk(start, _track, node, struct mp4_track)
 	{
 		if (_track->id == track_id) {
 			found = 1;
@@ -303,7 +306,8 @@ void mp4_tracks_destroy(struct mp4_file *mp4)
 
 	ULOG_ERRNO_RETURN_IF(mp4 == NULL, EINVAL);
 
-	list_walk_entry_forward_safe(&mp4->tracks, track, tmp, node)
+	struct list_node *start = &mp4->tracks;
+	custom_safe_walk(start, track, tmp, node, struct mp4_track)
 	{
 		mp4_track_destroy(track);
 	}
@@ -319,7 +323,8 @@ int mp4_tracks_build(struct mp4_file *mp4)
 
 	ULOG_ERRNO_RETURN_ERR_IF(mp4 == NULL, EINVAL);
 
-	list_walk_entry_forward(&mp4->tracks, tk, node)
+	struct list_node *start = &mp4->tracks;
+	custom_walk(start, tk, node, struct mp4_track)
 	{
 		unsigned int i, j, k, n;
 		uint32_t lastFirstChunk = 1, lastSamplesPerChunk = 0;

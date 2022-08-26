@@ -195,6 +195,23 @@ int main(int argc, char *argv[])
 				mux, videotrack, &vdc);
 			has_more_video = info.sample_count > 0;
 			current_track = videotrack;
+
+			struct mp4_mux_track_params params2 = {
+				.type = MP4_TRACK_TYPE_METADATA,
+				.name = "SAI METADATA SAI",
+				.enabled = info.enabled,
+				.in_movie = info.in_movie,
+				.in_preview = info.in_preview,
+				.timescale = info.timescale,
+				.creation_time = info.creation_time,
+				.modification_time = info.modification_time,
+			};
+			metatrack = mp4_mux_add_track(mux, &params2);
+			mp4_mux_track_set_metadata_mime_type(
+				mux,
+				metatrack,
+				info.content_encoding,
+				info.mime_format);		
 		}
 		if (info.type == MP4_TRACK_TYPE_AUDIO && audiotrack == -1) {
 			uint8_t *audioSpecificConfig;
@@ -242,11 +259,7 @@ int main(int argc, char *argv[])
 			char **values = NULL;
 
 			ret = mp4_demux_get_track_metadata_strings(
-				demux,
-				info.id,
-				&meta_count,
-				&keys,
-				&values);
+				demux, info.id, &meta_count, &keys, &values);
 			if (ret < 0) {
 				ULOG_ERRNO(
 					"mp4_demux_get_track_metadata_strings",
@@ -297,6 +310,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	int count = 0;
 	/* Set cover, if available */
 	ret = mp4_demux_get_metadata_cover(demux,
 					   sample_buffer,
@@ -343,10 +357,11 @@ int main(int argc, char *argv[])
 			mux_sample.len = sample.size;
 			mux_sample.sync = sample.sync;
 			mux_sample.dts = sample.dts;
+			count++;
 			mp4_mux_track_add_sample(mux, videotrack, &mux_sample);
-			if (sample.metadata_size > 0 && metatrack != -1) {
-				mux_sample.buffer = metadata_buffer;
-				mux_sample.len = sample.metadata_size;
+			if (metatrack != -1) {
+				mux_sample.buffer = "HOLA SAI";
+				mux_sample.len = 8;
 				mp4_mux_track_add_sample(
 					mux, metatrack, &mux_sample);
 			}

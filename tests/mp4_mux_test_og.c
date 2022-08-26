@@ -315,10 +315,12 @@ int main(int argc, char *argv[])
 	while (has_more_audio || has_more_video) {
 		struct mp4_track_sample sample;
 		struct mp4_mux_sample mux_sample;
+		
 		int lc_video = 0;
 		int lc_audio = 0;
 		step_ts += increment_ts;
 		while (has_more_video) {
+			memset(metadata_buffer, 0, 8);
 			ret = mp4_demux_get_track_sample(demux,
 							 video.id,
 							 1,
