@@ -1,6 +1,4 @@
-rm -r _build
-mkdir _build
-cd _build 
-cmake --DCMAKE_BUILD_TYPE=Debug
-make
+cmake -S . -B build
+cd build 
+cmake --build . --config RelWithDebInfo
 cd ..
