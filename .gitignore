@@ -1,4 +1,5 @@
 _build
+build
 data
 .vscode
 ffmpeg_cmd.txt
