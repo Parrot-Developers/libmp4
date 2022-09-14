@@ -6,7 +6,7 @@ include_directories(AFTER SYSTEM include libfutils/include/futils ulog/libulog/i
 file(GLOB SOURCE src/*.*)
 
 message(${SOURCE})
-add_library(mp4lib ${HEADERS} ${SOURCE})
+add_library(mp4lib STATIC ${HEADERS} ${SOURCE})
 
 add_executable(muxerjpeg tests/muxer_jpeg.cpp)
 add_executable(muxerh264 tests/muxer_h264.cpp)
