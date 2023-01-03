@@ -2392,6 +2392,7 @@ static off_t mp4_box_meta_data_read(struct mp4_file *mp4,
 		case MP4_METADATA_TAG_TYPE_MAKER:
 		case MP4_METADATA_TAG_TYPE_MODEL:
 		case MP4_METADATA_TAG_TYPE_VERSION:
+		case MP4_METADATA_TAG_TYPE_STS:
 		case MP4_METADATA_TAG_TYPE_ENCODER: {
 			uint32_t idx = mp4->udtaMetadataParseIdx++;
 			mp4->udtaMetadataKey[idx] = malloc(5);
