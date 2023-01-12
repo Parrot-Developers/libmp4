@@ -104,8 +104,9 @@ static void mp4_box_log_internal(struct mp4_box *box,
 		level_bf &= ~(UINT64_C(1) << (indent - 1));
 	for (unsigned int i = 0; i < indent; i++) {
 		int pipe = !!(level_bf & (UINT64_C(1) << i));
-		spaces[2 * i] =
-			(last && i == indent - 1) ? '\\' : pipe ? '|' : ' ';
+		spaces[2 * i] = (last && i == indent - 1) ? '\\'
+				: pipe			  ? '|'
+							  : ' ';
 		spaces[2 * i + 1] = (i == indent - 1) ? '-' : ' ';
 	}
 	spaces[indent * 2] = '\0';
