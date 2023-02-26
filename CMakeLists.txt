@@ -13,6 +13,9 @@ set(LIB_SOURCES
 add_library(mp4 ${LIB_SOURCES})
 
 option(BUILD_SHARED_LIBS "Build using shared libraries" ON)
+set_target_properties(mp4 PROPERTIES
+                    POSITION_INDEPENDENT_CODE ${BUILD_SHARED_LIBS}
+)
 
 target_include_directories(mp4 PUBLIC
                             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
