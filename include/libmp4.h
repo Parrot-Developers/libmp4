@@ -288,6 +288,24 @@ mp4_demux_get_track_video_decoder_config(struct mp4_demux *demux,
 					 unsigned int track_id,
 					 struct mp4_video_decoder_config *vdc);
 
+MP4_API void 
+mp4_set_reader_pos_lastframe(struct mp4_demux *demux,
+					  unsigned int track_id,
+					  bool direction);
+
+MP4_API void 
+mp4_demux_toggle_playback(struct mp4_demux *demux,
+				       unsigned int track_id);
+					   
+MP4_API int
+mp4_demux_get_track_sample_rev(struct mp4_demux *demux,
+			       unsigned int track_id,
+			       int advance,
+			       uint8_t *sample_buffer,
+			       unsigned int sample_buffer_size,
+			       uint8_t *metadata_buffer,
+			       unsigned int metadata_buffer_size,
+			       struct mp4_track_sample *track_sample);
 
 MP4_API int
 mp4_demux_get_track_audio_specific_config(struct mp4_demux *demux,
@@ -329,6 +347,9 @@ MP4_API int mp4_demux_get_track_next_sample_time_after(struct mp4_demux *demux,
 						       int sync,
 						       uint64_t *sample_time);
 
+MP4_API int mp4_demux_time_range(struct mp4_demux *demux,
+				 uint64_t *start_ts,
+				 uint64_t *duration);
 
 MP4_API int mp4_demux_seek(struct mp4_demux *demux,
 			   uint64_t time_offset,

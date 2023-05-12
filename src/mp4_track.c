@@ -411,7 +411,8 @@ int mp4_tracks_build(struct mp4_file *mp4)
 				ts += tk->timeToSampleEntries[i].sampleDelta;
 			}
 		}
-
+		// set default direction 
+		tk->direction = true;
 		switch (tk->type) {
 		case MP4_TRACK_TYPE_VIDEO:
 			videoTrackCount++;

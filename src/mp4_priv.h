@@ -242,6 +242,7 @@ struct mp4_track {
 	uint32_t chunkCount;
 	uint64_t *chunkOffset;
 	uint32_t timeToSampleEntryCount;
+	bool direction;
 	struct mp4_time_to_sample_entry *timeToSampleEntries;
 	uint32_t sampleToChunkEntryCount;
 	struct mp4_sample_to_chunk_entry *sampleToChunkEntries;
