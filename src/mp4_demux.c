@@ -460,9 +460,9 @@ int mp4_demux_seek(struct mp4_demux *demux,
 }
 
 int mp4_demux_seek_jpeg(struct mp4_demux *demux,
-		   uint64_t time_offset,
-		   enum mp4_seek_method method,
-		   int *seekedToFrame)
+			uint64_t time_offset,
+			enum mp4_seek_method method,
+			int *seekedToFrame)
 {
 	struct mp4_track *tk = NULL;
 	struct mp4_file *mp4;
@@ -471,12 +471,17 @@ int mp4_demux_seek_jpeg(struct mp4_demux *demux,
 
 	mp4 = &demux->mp4;
 
+	/* makes a bigger estimate i.e. start
+	then moves backward till a frame with <= ts is found
+	*/
 	struct list_node *start = &mp4->tracks;
 	custom_walk(start, tk, node, struct mp4_track)
 	{
 		if (tk->type == MP4_TRACK_TYPE_CHAPTERS)
 			continue;
-
+		if (!tk->duration) {
+			return -ENFILE;
+		}
 		int found = 0, i, idx = 0;
 		uint64_t ts =
 			mp4_usec_to_sample_time(time_offset, tk->timescale);
@@ -486,9 +491,11 @@ int mp4_demux_seek_jpeg(struct mp4_demux *demux,
 					   tk->duration);
 		if (start < 0)
 			start = 0;
-		if ((unsigned)start >= tk->sampleCount) {
-			// start = tk->sampleCount - 1;
+		// Note: valid tk->sampleCount range [0, numberOfFrames-1]
+		if ((unsigned)start > tk->sampleCount) {
 			return -ENFILE;
+		} else if ((unsigned)start == tk->sampleCount) {
+			start = tk->sampleCount - 1;
 		}
 		while (((unsigned)start < tk->sampleCount - 1) &&
 		       (tk->sampleDecodingTime[start] < ts))
@@ -496,9 +503,16 @@ int mp4_demux_seek_jpeg(struct mp4_demux *demux,
 		for (i = start; i >= 0; i--) {
 			if (tk->sampleDecodingTime[i] <= ts) {
 				idx = get_seek_sample(tk, i, method);
-				// Note - every frame is sync in jpeg, so we want the next frame for MP4_SEEK_METHOD_NEXT_SYNC
-				if (method == MP4_SEEK_METHOD_NEXT_SYNC) {
-					idx += 1;
+				/* if the decodingSampleTime at idx is not
+				exactly equal i.e. less, then increment idx.
+				Because get_seek_sample was written for h264 but
+				in mjpeg every frame is sync, so we want the
+				next frame for MP4_SEEK_METHOD_NEXT_SYNC*/
+				if (tk->sampleDecodingTime[idx] != ts) {
+					if (method ==
+					    MP4_SEEK_METHOD_NEXT_SYNC) {
+						idx += 1;
+					}
 				}
 				if (idx < 0)
 					break;
@@ -537,6 +551,7 @@ int mp4_demux_seek_jpeg(struct mp4_demux *demux,
 
 	return 0;
 }
+
 
 
 int mp4_demux_get_media_info(struct mp4_demux *demux,
