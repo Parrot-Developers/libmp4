@@ -901,9 +901,10 @@ MP4_API int mp4_mux_sync(struct mp4_mux *mux)
 	ULOG_ERRNO_RETURN_ERR_IF(mux == NULL, EINVAL);
 
 	ret = mp4_mux_sync_internal(mux, false);
-	if (ret != 0)
+	if (ret < 0)
 		return ret;
 
+	printf("%s", "<<<<fflush@libmp4>>>>\n");
 	ret = fflush(mux->file);
 	if (ret != 0)
 		return -errno;
@@ -1372,12 +1373,15 @@ MP4_API int mp4_mux_track_add_scattered_sample(
 	}
 
 	for (int i = 0; i < sample->nbuffers; i++) {
-		ret = fwrite(sample->buffers[i], sample->len[i], 1, mux->file); // write the frame with size len[0] to the file.
-		if (ret != 1) {
-			offset = fseeko(mux->file, offset, SEEK_SET);
-			if (offset == -1)
-				ULOG_ERRNO("fseeko", errno);
-			return -EIO;
+		if (sample->buffers[i]) // dont write data in file but put entry in track with sample->len = 0
+		{
+			ret = fwrite(sample->buffers[i], sample->len[i], 1, mux->file); // write the frame with size len[0] to the file.
+			if (ret != 1) {
+				offset = fseeko(mux->file, offset, SEEK_SET);
+				if (offset == -1)
+					ULOG_ERRNO("fseeko", errno);
+				return -EIO;
+			}
 		}
 	}
 
