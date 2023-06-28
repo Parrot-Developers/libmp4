@@ -153,7 +153,7 @@ mp4_box_ftyp_read(struct mp4_file *mp4, struct mp4_box *box, off_t maxBytes)
 	CHECK_SIZE(maxBytes, 8);
 
 	/* 'major_brand' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t majorBrand = ntohl(val32);
 	ULOGD("- ftyp: major_brand=%c%c%c%c",
 	      (char)((majorBrand >> 24) & 0xFF),
@@ -162,14 +162,14 @@ mp4_box_ftyp_read(struct mp4_file *mp4, struct mp4_box *box, off_t maxBytes)
 	      (char)(majorBrand & 0xFF));
 
 	/* 'minor_version' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t minorVersion = ntohl(val32);
 	ULOGD("- ftyp: minor_version=%" PRIu32, minorVersion);
 
 	int k = 0;
 	while (boxReadBytes + 4 <= maxBytes) {
 		/* 'compatible_brands[]' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		uint32_t compatibleBrands = ntohl(val32);
 		ULOGD("- ftyp: compatible_brands[%d]=%c%c%c%c",
 		      k,
@@ -181,7 +181,7 @@ mp4_box_ftyp_read(struct mp4_file *mp4, struct mp4_box *box, off_t maxBytes)
 	}
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -199,7 +199,7 @@ mp4_box_mvhd_read(struct mp4_file *mp4, struct mp4_box *box, off_t maxBytes)
 	CHECK_SIZE(maxBytes, 25 * 4);
 
 	/* 'version' & 'flags' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t flags = ntohl(val32);
 	uint8_t version = (flags >> 24) & 0xFF;
 	flags &= ((1 << 24) - 1);
@@ -210,29 +210,29 @@ mp4_box_mvhd_read(struct mp4_file *mp4, struct mp4_box *box, off_t maxBytes)
 		CHECK_SIZE(maxBytes, 28 * 4);
 
 		/* 'creation_time' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		mp4->creationTime = (uint64_t)ntohl(val32) << 32;
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		mp4->creationTime |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
 		ULOGD("- mvhd: creation_time=%" PRIu64, mp4->creationTime);
 
 		/* 'modification_time' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		mp4->modificationTime = (uint64_t)ntohl(val32) << 32;
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		mp4->modificationTime |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
 		ULOGD("- mvhd: modification_time=%" PRIu64,
 		      mp4->modificationTime);
 
 		/* 'timescale' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		mp4->timescale = ntohl(val32);
 		ULOGD("- mvhd: timescale=%" PRIu32, mp4->timescale);
 
 		/* 'duration' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		mp4->duration = (uint64_t)ntohl(val32) << 32;
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		mp4->duration |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
 		unsigned int hrs =
 			(unsigned int)((mp4->duration + mp4->timescale / 2) /
@@ -252,23 +252,23 @@ mp4_box_mvhd_read(struct mp4_file *mp4, struct mp4_box *box, off_t maxBytes)
 		      sec);
 	} else {
 		/* 'creation_time' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		mp4->creationTime = ntohl(val32);
 		ULOGD("- mvhd: creation_time=%" PRIu64, mp4->creationTime);
 
 		/* 'modification_time' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		mp4->modificationTime = ntohl(val32);
 		ULOGD("- mvhd: modification_time=%" PRIu64,
 		      mp4->modificationTime);
 
 		/* 'timescale' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		mp4->timescale = ntohl(val32);
 		ULOGD("- mvhd: timescale=%" PRIu32, mp4->timescale);
 
 		/* 'duration' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		mp4->duration = ntohl(val32);
 		unsigned int hrs =
 			(unsigned int)((mp4->duration + mp4->timescale / 2) /
@@ -289,35 +289,35 @@ mp4_box_mvhd_read(struct mp4_file *mp4, struct mp4_box *box, off_t maxBytes)
 	}
 
 	/* 'rate' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	float rate = (float)ntohl(val32) / 65536.;
 	ULOGD("- mvhd: rate=%.4f", rate);
 
 	/* 'volume' & 'reserved' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	float volume = (float)((ntohl(val32) >> 16) & 0xFFFF) / 256.;
 	ULOGD("- mvhd: volume=%.2f", volume);
 
 	/* 'reserved' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 	/* 'matrix' */
 	int k;
 	for (k = 0; k < 9; k++)
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 	/* 'pre_defined' */
 	for (k = 0; k < 6; k++)
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 	/* 'next_track_ID' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t next_track_ID = ntohl(val32);
 	ULOGD("- mvhd: next_track_ID=%" PRIu32, next_track_ID);
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -339,7 +339,7 @@ static off_t mp4_box_tkhd_read(struct mp4_file *mp4,
 	CHECK_SIZE(maxBytes, 21 * 4);
 
 	/* 'version' & 'flags' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t flags = ntohl(val32);
 	uint8_t version = (flags >> 24) & 0xFF;
 	flags &= ((1 << 24) - 1);
@@ -353,31 +353,31 @@ static off_t mp4_box_tkhd_read(struct mp4_file *mp4,
 		CHECK_SIZE(maxBytes, 24 * 4);
 
 		/* 'creation_time' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		uint64_t creationTime = (uint64_t)ntohl(val32) << 32;
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		creationTime |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
 		ULOGD("- tkhd: creation_time=%" PRIu64, creationTime);
 
 		/* 'modification_time' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		uint64_t modificationTime = (uint64_t)ntohl(val32) << 32;
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		modificationTime |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
 		ULOGD("- tkhd: modification_time=%" PRIu64, modificationTime);
 
 		/* 'track_ID' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->id = ntohl(val32);
 		ULOGD("- tkhd: track_ID=%" PRIu32, track->id);
 
 		/* 'reserved' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 		/* 'duration' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		uint64_t duration = (uint64_t)ntohl(val32) << 32;
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		duration |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
 		unsigned int hrs =
 			(unsigned int)((duration + mp4->timescale / 2) /
@@ -397,25 +397,25 @@ static off_t mp4_box_tkhd_read(struct mp4_file *mp4,
 		      sec);
 	} else {
 		/* 'creation_time' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		uint32_t creationTime = ntohl(val32);
 		ULOGD("- tkhd: creation_time=%" PRIu32, creationTime);
 
 		/* 'modification_time' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		uint32_t modificationTime = ntohl(val32);
 		ULOGD("- tkhd: modification_time=%" PRIu32, modificationTime);
 
 		/* 'track_ID' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->id = ntohl(val32);
 		ULOGD("- tkhd: track_ID=%" PRIu32, track->id);
 
 		/* 'reserved' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 		/* 'duration' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		uint32_t duration = ntohl(val32);
 		unsigned int hrs =
 			(unsigned int)((duration + mp4->timescale / 2) /
@@ -436,38 +436,38 @@ static off_t mp4_box_tkhd_read(struct mp4_file *mp4,
 	}
 
 	/* 'reserved' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 	/* 'layer' & 'alternate_group' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	int16_t layer = (int16_t)(ntohl(val32) >> 16);
 	int16_t alternateGroup = (int16_t)(ntohl(val32) & 0xFFFF);
 	ULOGD("- tkhd: layer=%i", layer);
 	ULOGD("- tkhd: alternate_group=%i", alternateGroup);
 
 	/* 'volume' & 'reserved' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	float volume = (float)((ntohl(val32) >> 16) & 0xFFFF) / 256.;
 	ULOGD("- tkhd: volume=%.2f", volume);
 
 	/* 'matrix' */
 	int k;
 	for (k = 0; k < 9; k++)
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 	/* 'width' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	float width = (float)ntohl(val32) / 65536.;
 	ULOGD("- tkhd: width=%.2f", width);
 
 	/* 'height' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	float height = (float)ntohl(val32) / 65536.;
 	ULOGD("- tkhd: height=%.2f", height);
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -489,12 +489,12 @@ static off_t mp4_box_tref_read(struct mp4_file *mp4,
 	CHECK_SIZE(maxBytes, 3 * 4);
 
 	/* 'reference_type' size */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t referenceTypeSize = ntohl(val32);
 	ULOGD("- tref: reference_type_size=%" PRIu32, referenceTypeSize);
 
 	/* 'reference_type' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	track->referenceType = ntohl(val32);
 	ULOGD("- tref: reference_type=%c%c%c%c",
 	      (char)((track->referenceType >> 24) & 0xFF),
@@ -506,7 +506,7 @@ static off_t mp4_box_tref_read(struct mp4_file *mp4,
 	track->referenceTrackIdCount = 0;
 	while ((boxReadBytes + 4 <= maxBytes) &&
 	       (track->referenceTrackIdCount < MP4_TRACK_REF_MAX)) {
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->referenceTrackId[track->referenceTrackIdCount] =
 			ntohl(val32);
 		ULOGD("- tref: track_id=%" PRIu32,
@@ -521,7 +521,7 @@ static off_t mp4_box_tref_read(struct mp4_file *mp4,
 	}
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -543,7 +543,7 @@ static off_t mp4_box_mdhd_read(struct mp4_file *mp4,
 	CHECK_SIZE(maxBytes, 6 * 4);
 
 	/* 'version' & 'flags' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t flags = ntohl(val32);
 	uint8_t version = (flags >> 24) & 0xFF;
 	flags &= ((1 << 24) - 1);
@@ -554,30 +554,30 @@ static off_t mp4_box_mdhd_read(struct mp4_file *mp4,
 		CHECK_SIZE(maxBytes, 9 * 4);
 
 		/* 'creation_time' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->creationTime = (uint64_t)ntohl(val32) << 32;
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->creationTime |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
 		ULOGD("- mdhd: creation_time=%" PRIu64, track->creationTime);
 
 		/* 'modification_time' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->modificationTime = (uint64_t)ntohl(val32) << 32;
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->modificationTime |=
 			(uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
 		ULOGD("- mdhd: modification_time=%" PRIu64,
 		      track->modificationTime);
 
 		/* 'timescale' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->timescale = ntohl(val32);
 		ULOGD("- mdhd: timescale=%" PRIu32, track->timescale);
 
 		/* 'duration' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->duration = (uint64_t)ntohl(val32) << 32;
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->duration |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
 		unsigned int hrs = (unsigned int)((track->duration +
 						   track->timescale / 2) /
@@ -598,23 +598,23 @@ static off_t mp4_box_mdhd_read(struct mp4_file *mp4,
 		      sec);
 	} else {
 		/* 'creation_time' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->creationTime = ntohl(val32);
 		ULOGD("- mdhd: creation_time=%" PRIu64, track->creationTime);
 
 		/* 'modification_time' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->modificationTime = ntohl(val32);
 		ULOGD("- mdhd: modification_time=%" PRIu64,
 		      track->modificationTime);
 
 		/* 'timescale' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->timescale = ntohl(val32);
 		ULOGD("- mdhd: timescale=%" PRIu32, track->timescale);
 
 		/* 'duration' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->duration = (uint64_t)ntohl(val32);
 		unsigned int hrs = (unsigned int)((track->duration +
 						   track->timescale / 2) /
@@ -636,12 +636,12 @@ static off_t mp4_box_mdhd_read(struct mp4_file *mp4,
 	}
 
 	/* 'language' & 'pre_defined' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint16_t language = (uint16_t)(ntohl(val32) >> 16) & 0x7FFF;
 	ULOGD("- mdhd: language=%" PRIu16, language);
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -662,7 +662,7 @@ static off_t mp4_box_vmhd_read(struct mp4_file *mp4,
 	CHECK_SIZE(maxBytes, 3 * 4);
 
 	/* 'version' & 'flags' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t flags = ntohl(val32);
 	uint8_t version = (flags >> 24) & 0xFF;
 	flags &= ((1 << 24) - 1);
@@ -670,17 +670,17 @@ static off_t mp4_box_vmhd_read(struct mp4_file *mp4,
 	ULOGD("- vmhd: flags=%" PRIu32, flags);
 
 	/* 'graphicsmode' */
-	MP4_READ_16(mp4->file, val16, boxReadBytes);
+	MP4_READ_16(mp4->fd, val16, boxReadBytes);
 	uint16_t graphicsmode = ntohs(val16);
 	ULOGD("- vmhd: graphicsmode=%" PRIu16, graphicsmode);
 
 	/* 'opcolor' */
 	uint16_t opcolor[3];
-	MP4_READ_16(mp4->file, val16, boxReadBytes);
+	MP4_READ_16(mp4->fd, val16, boxReadBytes);
 	opcolor[0] = ntohs(val16);
-	MP4_READ_16(mp4->file, val16, boxReadBytes);
+	MP4_READ_16(mp4->fd, val16, boxReadBytes);
 	opcolor[1] = ntohs(val16);
-	MP4_READ_16(mp4->file, val16, boxReadBytes);
+	MP4_READ_16(mp4->fd, val16, boxReadBytes);
 	opcolor[2] = ntohs(val16);
 	ULOGD("- vmhd: opcolor=(%" PRIu16 ",%" PRIu16 ",%" PRIu16 ")",
 	      opcolor[0],
@@ -688,7 +688,7 @@ static off_t mp4_box_vmhd_read(struct mp4_file *mp4,
 	      opcolor[2]);
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -708,7 +708,7 @@ static off_t mp4_box_smhd_read(struct mp4_file *mp4,
 	CHECK_SIZE(maxBytes, 2 * 4);
 
 	/* 'version' & 'flags' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t flags = ntohl(val32);
 	uint8_t version = (flags >> 24) & 0xFF;
 	flags &= ((1 << 24) - 1);
@@ -716,13 +716,13 @@ static off_t mp4_box_smhd_read(struct mp4_file *mp4,
 	ULOGD("- smhd: flags=%" PRIu32, flags);
 
 	/* 'balance' & 'reserved' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	float balance =
 		(float)((int16_t)((ntohl(val32) >> 16) & 0xFFFF)) / 256.;
 	ULOGD("- smhd: balance=%.2f", balance);
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -742,7 +742,7 @@ static off_t mp4_box_hmhd_read(struct mp4_file *mp4,
 	CHECK_SIZE(maxBytes, 5 * 4);
 
 	/* 'version' & 'flags' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t flags = ntohl(val32);
 	uint8_t version = (flags >> 24) & 0xFF;
 	flags &= ((1 << 24) - 1);
@@ -750,27 +750,27 @@ static off_t mp4_box_hmhd_read(struct mp4_file *mp4,
 	ULOGD("- hmhd: flags=%" PRIu32, flags);
 
 	/* 'maxPDUsize' & 'avgPDUsize' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint16_t maxPDUsize = (uint16_t)((ntohl(val32) >> 16) & 0xFFFF);
 	uint16_t avgPDUsize = (uint16_t)(ntohl(val32) & 0xFFFF);
 	ULOGD("- hmhd: maxPDUsize=%" PRIu16, maxPDUsize);
 	ULOGD("- hmhd: avgPDUsize=%" PRIu16, avgPDUsize);
 
 	/* 'maxbitrate' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t maxbitrate = ntohl(val32);
 	ULOGD("- hmhd: maxbitrate=%" PRIu32, maxbitrate);
 
 	/* 'avgbitrate' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t avgbitrate = ntohl(val32);
 	ULOGD("- hmhd: avgbitrate=%" PRIu32, avgbitrate);
 
 	/* 'reserved' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -790,7 +790,7 @@ static off_t mp4_box_nmhd_read(struct mp4_file *mp4,
 	CHECK_SIZE(maxBytes, 4);
 
 	/* 'version' & 'flags' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t flags = ntohl(val32);
 	uint8_t version = (flags >> 24) & 0xFF;
 	flags &= ((1 << 24) - 1);
@@ -798,7 +798,7 @@ static off_t mp4_box_nmhd_read(struct mp4_file *mp4,
 	ULOGD("- nmhd: flags=%" PRIu32, flags);
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -818,7 +818,7 @@ static off_t mp4_box_hdlr_read(struct mp4_file *mp4,
 	CHECK_SIZE(maxBytes, 6 * 4);
 
 	/* 'version' & 'flags' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t flags = ntohl(val32);
 	uint8_t version = (flags >> 24) & 0xFF;
 	flags &= ((1 << 24) - 1);
@@ -826,10 +826,10 @@ static off_t mp4_box_hdlr_read(struct mp4_file *mp4,
 	ULOGD("- hdlr: flags=%" PRIu32, flags);
 
 	/* 'pre_defined' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 	/* 'handler_type' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t handlerType = ntohl(val32);
 	ULOGD("- hdlr: handler_type=%c%c%c%c",
 	      (char)((handlerType >> 24) & 0xFF),
@@ -864,11 +864,11 @@ static off_t mp4_box_hdlr_read(struct mp4_file *mp4,
 	/* 'reserved' */
 	unsigned int k;
 	for (k = 0; k < 3; k++)
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 	char name[100];
 	for (k = 0; (k < sizeof(name) - 2) && (boxReadBytes < maxBytes); k++) {
-		MP4_READ_8(mp4->file, name[k], boxReadBytes);
+		MP4_READ_8(mp4->fd, name[k], boxReadBytes);
 		if (name[k] == '\0')
 			break;
 	}
@@ -882,7 +882,7 @@ static off_t mp4_box_hdlr_read(struct mp4_file *mp4,
 	}
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -903,7 +903,7 @@ mp4_box_avcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 	CHECK_SIZE(maxBytes, minBytes);
 
 	/* 'version' & 'profile' & 'level' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	val32 = htonl(val32);
 	uint8_t version = (val32 >> 24) & 0xFF;
 	uint8_t profile = (val32 >> 16) & 0xFF;
@@ -915,7 +915,7 @@ mp4_box_avcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 	ULOGD("- avcC: level=%d", level);
 
 	/* 'length_size' & 'sps_count' */
-	MP4_READ_16(mp4->file, val16, boxReadBytes);
+	MP4_READ_16(mp4->fd, val16, boxReadBytes);
 	val16 = htons(val16);
 	uint8_t lengthSize = ((val16 >> 8) & 0x3) + 1;
 	uint8_t spsCount = val16 & 0x1F;
@@ -928,7 +928,7 @@ mp4_box_avcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 	int i;
 	for (i = 0; i < spsCount; i++) {
 		/* 'sps_length' */
-		MP4_READ_16(mp4->file, val16, boxReadBytes);
+		MP4_READ_16(mp4->fd, val16, boxReadBytes);
 		uint16_t spsLength = htons(val16);
 		ULOGD("- avcC: sps_length=%" PRIu16, spsLength);
 
@@ -943,17 +943,17 @@ mp4_box_avcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 				ULOG_ERRNO("malloc", ENOMEM);
 				return -ENOMEM;
 			}
-			size_t count = fread(
-				track->vdc.avc.sps, spsLength, 1, mp4->file);
-			if (count != 1) {
-				ULOG_ERRNO("fread", errno);
+			ssize_t count =
+				read(mp4->fd, track->vdc.avc.sps, spsLength);
+			if (count == -1) {
+				ULOG_ERRNO("read", errno);
 				return -errno;
 			}
 		} else {
 			/* Ignore any other SPS */
-			int ret = fseeko(mp4->file, spsLength, SEEK_CUR);
-			if (ret != 0) {
-				ULOG_ERRNO("fseeko", errno);
+			off_t ret = lseek(mp4->fd, spsLength, SEEK_CUR);
+			if (ret == -1) {
+				ULOG_ERRNO("lseek", errno);
 				return -errno;
 			}
 		}
@@ -965,7 +965,7 @@ mp4_box_avcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 
 	/* 'pps_count' */
 	uint8_t ppsCount;
-	MP4_READ_8(mp4->file, ppsCount, boxReadBytes);
+	MP4_READ_8(mp4->fd, ppsCount, boxReadBytes);
 	ULOGD("- avcC: pps_count=%d", ppsCount);
 
 	minBytes += 2 * ppsCount;
@@ -973,7 +973,7 @@ mp4_box_avcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 
 	for (i = 0; i < ppsCount; i++) {
 		/* 'pps_length' */
-		MP4_READ_16(mp4->file, val16, boxReadBytes);
+		MP4_READ_16(mp4->fd, val16, boxReadBytes);
 		uint16_t ppsLength = htons(val16);
 		ULOGD("- avcC: pps_length=%" PRIu16, ppsLength);
 
@@ -988,17 +988,17 @@ mp4_box_avcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 				ULOG_ERRNO("malloc", ENOMEM);
 				return -ENOMEM;
 			}
-			size_t count = fread(
-				track->vdc.avc.pps, ppsLength, 1, mp4->file);
-			if (count != 1) {
-				ULOG_ERRNO("fread", errno);
+			ssize_t count =
+				read(mp4->fd, track->vdc.avc.pps, ppsLength);
+			if (count == -1) {
+				ULOG_ERRNO("read", errno);
 				return -errno;
 			}
 		} else {
 			/* Ignore any other PPS */
-			int ret = fseeko(mp4->file, ppsLength, SEEK_CUR);
-			if (ret != 0) {
-				ULOG_ERRNO("fseeko", errno);
+			off_t ret = lseek(mp4->fd, ppsLength, SEEK_CUR);
+			if (ret == -1) {
+				ULOG_ERRNO("lseek", errno);
 				return -errno;
 			}
 		}
@@ -1006,7 +1006,7 @@ mp4_box_avcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 	}
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -1030,7 +1030,7 @@ mp4_box_hvcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 
 	/* 'version' */
 	uint8_t version;
-	MP4_READ_8(mp4->file, version, boxReadBytes);
+	MP4_READ_8(mp4->fd, version, boxReadBytes);
 	if (version != 1)
 		ULOGE("hvcC configurationVersion mismatch: %u (expected 1)",
 		      version);
@@ -1040,7 +1040,7 @@ mp4_box_hvcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 
 	/* 'general_profile_space', 'general_tier_flag', 'general_profile_idc'
 	 */
-	MP4_READ_8(mp4->file, val8, boxReadBytes);
+	MP4_READ_8(mp4->fd, val8, boxReadBytes);
 	hvcc->general_profile_space = val8 >> 6;
 	hvcc->general_tier_flag = (val8 >> 5) & 0x01;
 	hvcc->general_profile_idc = val8 & 0x1F;
@@ -1049,14 +1049,14 @@ mp4_box_hvcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 	ULOGD("- hvcC: general_profile_idc=%d", hvcc->general_profile_idc);
 
 	/* 'general_profile_compatibility_flags' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	hvcc->general_profile_compatibility_flags = htonl(val32);
 	ULOGD("- hvcC: general_profile_compatibility_flags= %#" PRIx32,
 	      hvcc->general_profile_compatibility_flags);
 
 	/* 'general_constraints_indicator_flags' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
-	MP4_READ_16(mp4->file, val16, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
+	MP4_READ_16(mp4->fd, val16, boxReadBytes);
 	val32 = htonl(val32);
 	val16 = htons(val16);
 	hvcc->general_constraints_indicator_flags =
@@ -1065,43 +1065,43 @@ mp4_box_hvcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 	      hvcc->general_constraints_indicator_flags);
 
 	/* 'general_level_idc' */
-	MP4_READ_8(mp4->file, hvcc->general_level_idc, boxReadBytes);
+	MP4_READ_8(mp4->fd, hvcc->general_level_idc, boxReadBytes);
 	ULOGD("- hvcC: level_idc=%d", hvcc->general_level_idc);
 
 	/* 'min_spatial_segmentation_idc' */
-	MP4_READ_16(mp4->file, val16, boxReadBytes);
+	MP4_READ_16(mp4->fd, val16, boxReadBytes);
 	val16 = htons(val16);
 	hvcc->min_spatial_segmentation_idc = val16 & 0x0FFF;
 	ULOGD("- hvcC: min_sseg_idc=%d", hvcc->min_spatial_segmentation_idc);
 
 	/* 'parallelismType' */
-	MP4_READ_8(mp4->file, val8, boxReadBytes);
+	MP4_READ_8(mp4->fd, val8, boxReadBytes);
 	hvcc->parallelism_type = val8 & 0x02;
 	ULOGD("- hvcC: parallel_type=%d", hvcc->parallelism_type);
 
 	/* 'chromaFormat' */
-	MP4_READ_8(mp4->file, val8, boxReadBytes);
+	MP4_READ_8(mp4->fd, val8, boxReadBytes);
 	hvcc->chroma_format = val8 & 0x02;
 	ULOGD("- hvcC: chroma_format=%d", hvcc->chroma_format);
 
 	/* 'bitDepthLuma' */
-	MP4_READ_8(mp4->file, val8, boxReadBytes);
+	MP4_READ_8(mp4->fd, val8, boxReadBytes);
 	hvcc->bit_depth_luma = (val8 & 0x03) + 8;
 	ULOGD("- hvcC: bit_depth_luma=%d", hvcc->bit_depth_luma);
 
 	/* 'bitDepthChroma' */
-	MP4_READ_8(mp4->file, val8, boxReadBytes);
+	MP4_READ_8(mp4->fd, val8, boxReadBytes);
 	hvcc->bit_depth_chroma = (val8 & 0x03) + 8;
 	ULOGD("- hvcC: bit_depth_chroma=%d", hvcc->bit_depth_chroma);
 
 	/* 'avgFrameRate' */
-	MP4_READ_16(mp4->file, val16, boxReadBytes);
+	MP4_READ_16(mp4->fd, val16, boxReadBytes);
 	hvcc->avg_framerate = htons(val16);
 	ULOGD("- hvcC: avg_framerate=%d", hvcc->avg_framerate);
 
 	/* 'constantFrameRate', 'numTemporalLayers', 'temporalIdNested'
 	   'lengthSize'	*/
-	MP4_READ_8(mp4->file, val8, boxReadBytes);
+	MP4_READ_8(mp4->fd, val8, boxReadBytes);
 	hvcc->constant_framerate = (val8 >> 6) & 0x03;
 	hvcc->num_temporal_layers = (val8 >> 3) & 0x7;
 	hvcc->temporal_id_nested = (val8 >> 2) & 0x01;
@@ -1112,7 +1112,7 @@ mp4_box_hvcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 	ULOGD("- hvcC: length_size=%d", hvcc->length_size);
 
 	/* 'numOfArrays' */
-	MP4_READ_8(mp4->file, val8, boxReadBytes);
+	MP4_READ_8(mp4->fd, val8, boxReadBytes);
 	if (val8 > 16) {
 		ULOGE("hvcC: invalid numOfArrays=%d", val8);
 		return -EINVAL;
@@ -1126,14 +1126,14 @@ mp4_box_hvcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 
 		ULOGD("- hvcC:     ------------------ NALU #%d", i);
 		/* 'array_completeness' and 'NAL_unit_type' */
-		MP4_READ_8(mp4->file, val8, boxReadBytes);
+		MP4_READ_8(mp4->fd, val8, boxReadBytes);
 		array_completeness = (val8 >> 7) & 0x01;
 		nalu_type = val8 & 0x3F;
 		ULOGD("- hvcC:     array_completeness=%d", array_completeness);
 		ULOGD("- hvcC:     nal_unit_type=%d", nalu_type);
 
 		/* 'numNalus' */
-		MP4_READ_16(mp4->file, val16, boxReadBytes);
+		MP4_READ_16(mp4->fd, val16, boxReadBytes);
 		nb_nalus = htons(val16);
 		if (nb_nalus > 16) {
 			ULOGE("hvcC: invalid numNalus=%d", nb_nalus);
@@ -1146,7 +1146,7 @@ mp4_box_hvcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 			uint16_t nalu_length;
 
 			/* 'nalUnitLength' */
-			MP4_READ_16(mp4->file, val16, boxReadBytes);
+			MP4_READ_16(mp4->fd, val16, boxReadBytes);
 			nalu_length = htons(val16);
 			ULOGD("- hvcC:         nalu_length = %d", nalu_length);
 			nalu_pptr = NULL;
@@ -1190,11 +1190,10 @@ mp4_box_hvcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 					      "(type = %u)",
 					      nalu_type);
 					/* Ignore any other NALU */
-					int ret = fseeko(mp4->file,
-							 nalu_length,
-							 SEEK_CUR);
-					if (ret != 0) {
-						ULOG_ERRNO("fseeko", errno);
+					off_t ret = lseek(
+						mp4->fd, nalu_length, SEEK_CUR);
+					if (ret == -1) {
+						ULOG_ERRNO("lseek", errno);
 						return -errno;
 					}
 					break;
@@ -1208,18 +1207,18 @@ mp4_box_hvcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 					ULOG_ERRNO("calloc", ENOMEM);
 					return -ENOMEM;
 				}
-				size_t count = fread(
-					*nalu_pptr, nalu_length, 1, mp4->file);
-				if (count != 1) {
-					ULOG_ERRNO("fread", errno);
+				ssize_t count =
+					read(mp4->fd, *nalu_pptr, nalu_length);
+				if (count == -1) {
+					ULOG_ERRNO("read", errno);
 					return -errno;
 				}
 			} else {
 				/* Skip the latter nalu of a given type */
-				int ret = fseeko(
-					mp4->file, nalu_length, SEEK_CUR);
-				if (ret != 0) {
-					ULOG_ERRNO("fseeko", errno);
+				off_t ret =
+					lseek(mp4->fd, nalu_length, SEEK_CUR);
+				if (ret == -1) {
+					ULOG_ERRNO("lseek", errno);
 					return -errno;
 				}
 			}
@@ -1246,12 +1245,12 @@ mp4_box_esds_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 	CHECK_SIZE(maxBytes, minBytes);
 
 	/* 'version', always 0 */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	ULOGD("- esds: version=%" PRIu32, val32);
 
 	/* 'ESDescriptor' */
 	uint8_t tag;
-	MP4_READ_8(mp4->file, tag, boxReadBytes);
+	MP4_READ_8(mp4->fd, tag, boxReadBytes);
 	if (tag != 3) {
 		ULOGE("invalid ESDescriptor tag: %" PRIu8 ", expected %d",
 		      tag,
@@ -1263,7 +1262,7 @@ mp4_box_esds_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 	off_t size = 0;
 	int cnt = 0;
 	do {
-		MP4_READ_8(mp4->file, val8, boxReadBytes);
+		MP4_READ_8(mp4->fd, val8, boxReadBytes);
 		size = (size << 7) + (val8 & 0x7F);
 		cnt++;
 	} while (val8 & 0x80 && cnt < 4);
@@ -1278,31 +1277,31 @@ mp4_box_esds_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 	CHECK_SIZE(maxBytes, minBytes);
 
 	/* 'ES_ID' */
-	MP4_READ_16(mp4->file, val16, boxReadBytes);
+	MP4_READ_16(mp4->fd, val16, boxReadBytes);
 	val16 = ntohs(val16);
 	ULOGD("- esds: ESDescriptor ES_ID:%" PRIu16, val16);
 
 	/* 'flags' */
 	uint8_t flags;
-	MP4_READ_8(mp4->file, flags, boxReadBytes);
+	MP4_READ_8(mp4->fd, flags, boxReadBytes);
 	ULOGD("- esds: ESDecriptor flags:0x%02x", flags);
 
 	if (flags & 0x80) {
 		/* 'dependsOn_ES_ID' */
-		MP4_READ_16(mp4->file, val16, boxReadBytes);
+		MP4_READ_16(mp4->fd, val16, boxReadBytes);
 		val16 = ntohs(val16);
 		ULOGD("- esds: ESDescriptor dependsOn_ES_ID:%" PRIu16, val16);
 	}
 	if (flags & 0x40) {
 		/* URL_Flag : read 'url_len' & 'url' */
-		MP4_READ_8(mp4->file, val8, boxReadBytes);
+		MP4_READ_8(mp4->fd, val8, boxReadBytes);
 		ULOGD("- esds: ESDescriptor url_len:%" PRIu8, val8);
-		MP4_READ_SKIP(mp4->file, val8, boxReadBytes);
+		MP4_READ_SKIP(mp4->fd, val8, boxReadBytes);
 		ULOGD("- esds: skipped %" PRIu8 " bytes", val8);
 	}
 
 	/* 'DecoderConfigDescriptor' */
-	MP4_READ_8(mp4->file, tag, boxReadBytes);
+	MP4_READ_8(mp4->fd, tag, boxReadBytes);
 	if (tag != 4) {
 		ULOGE("invalid DecoderConfigDescriptor tag: %" PRIu8
 		      ", expected %d",
@@ -1314,7 +1313,7 @@ mp4_box_esds_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 	size = 0;
 	cnt = 0;
 	do {
-		MP4_READ_8(mp4->file, val8, boxReadBytes);
+		MP4_READ_8(mp4->fd, val8, boxReadBytes);
 		size = (size << 7) + (val8 & 0x7F);
 		cnt++;
 	} while (val8 & 0x80 && cnt < 4);
@@ -1330,7 +1329,7 @@ mp4_box_esds_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 
 	/* 'DecoderConfigDescriptor.objectTypeIndication' */
 	uint8_t objectTypeIndication;
-	MP4_READ_8(mp4->file, objectTypeIndication, boxReadBytes);
+	MP4_READ_8(mp4->fd, objectTypeIndication, boxReadBytes);
 	if (objectTypeIndication != 0x40) {
 		ULOGE("invalid objectTypeIndication: %" PRIu8 ", expected 0x%x",
 		      objectTypeIndication,
@@ -1341,7 +1340,7 @@ mp4_box_esds_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 
 	/* 'DecoderConfigDescriptor.streamType' */
 	uint8_t streamType;
-	MP4_READ_8(mp4->file, streamType, boxReadBytes);
+	MP4_READ_8(mp4->fd, streamType, boxReadBytes);
 	streamType >>= 2;
 	if (streamType != 0x5) {
 		ULOGE("invalid streamType: %" PRIu8 ", expected 0x%x",
@@ -1352,11 +1351,11 @@ mp4_box_esds_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 	ULOGD("- esds: streamType:0x%x", streamType);
 
 	/* Next 11 bytes unused */
-	MP4_READ_SKIP(mp4->file, 11, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, 11, boxReadBytes);
 	ULOGD("- esds: skipped 11 bytes");
 
 	/* 'DecoderSpecificInfo' */
-	MP4_READ_8(mp4->file, tag, boxReadBytes);
+	MP4_READ_8(mp4->fd, tag, boxReadBytes);
 	if (tag != 5) {
 		ULOGE("invalid DecoderSpecificInfo tag: %" PRIu8
 		      ", expected %d",
@@ -1368,7 +1367,7 @@ mp4_box_esds_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 	size = 0;
 	cnt = 0;
 	do {
-		MP4_READ_8(mp4->file, val8, boxReadBytes);
+		MP4_READ_8(mp4->fd, val8, boxReadBytes);
 		size = (size << 7) + (val8 & 0x7F);
 		cnt++;
 	} while (val8 & 0x80 && cnt < 4);
@@ -1389,10 +1388,9 @@ mp4_box_esds_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 			ULOG_ERRNO("malloc", ENOMEM);
 			return -ENOMEM;
 		}
-		size_t count =
-			fread(track->audioSpecificConfig, size, 1, mp4->file);
-		if (count != 1) {
-			ULOG_ERRNO("fread", errno);
+		ssize_t count = read(mp4->fd, track->audioSpecificConfig, size);
+		if (count == -1) {
+			ULOG_ERRNO("read", errno);
 			return -errno;
 		}
 		ULOGD("- esds: read %zd bytes for audioSpecificConfig",
@@ -1408,7 +1406,7 @@ mp4_box_esds_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 	}
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -1431,7 +1429,7 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 	CHECK_SIZE(maxBytes, 8);
 
 	/* 'version' & 'flags' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t flags = ntohl(val32);
 	uint8_t version = (flags >> 24) & 0xFF;
 	flags &= ((1 << 24) - 1);
@@ -1439,7 +1437,7 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 	ULOGD("- stsd: flags=%" PRIu32, flags);
 
 	/* 'entry_count' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t entryCount = ntohl(val32);
 	ULOGD("- stsd: entry_count=%" PRIu32, entryCount);
 
@@ -1452,12 +1450,12 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 			CHECK_SIZE(maxBytes, 102);
 
 			/* 'size' */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			uint32_t size = ntohl(val32);
 			ULOGD("- stsd: size=%" PRIu32, size);
 
 			/* 'type' */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			uint32_t type = ntohl(val32);
 			ULOGD("- stsd: type=%c%c%c%c",
 			      (char)((type >> 24) & 0xFF),
@@ -1466,10 +1464,10 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 			      (char)(type & 0xFF));
 
 			/* 'reserved' */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 			/* 'reserved' & 'data_reference_index' */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			uint16_t dataReferenceIndex =
 				(uint16_t)(ntohl(val32) & 0xFFFF);
 			ULOGD("- stsd: data_reference_index=%" PRIu16,
@@ -1478,60 +1476,59 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 			int k;
 			for (k = 0; k < 4; k++) {
 				/* 'pre_defined' & 'reserved' */
-				MP4_READ_32(mp4->file, val32, boxReadBytes);
+				MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			}
 
 			/* 'width' & 'height' */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			track->vdc.width = ((ntohl(val32) >> 16) & 0xFFFF);
 			track->vdc.height = (ntohl(val32) & 0xFFFF);
 			ULOGD("- stsd: width=%" PRIu32, track->vdc.width);
 			ULOGD("- stsd: height=%" PRIu32, track->vdc.height);
 
 			/* 'horizresolution' */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			float horizresolution = (float)(ntohl(val32)) / 65536.;
 			ULOGD("- stsd: horizresolution=%.2f", horizresolution);
 
 			/* 'vertresolution' */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			float vertresolution = (float)(ntohl(val32)) / 65536.;
 			ULOGD("- stsd: vertresolution=%.2f", vertresolution);
 
 			/* 'reserved' */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 			/* 'frame_count' */
-			MP4_READ_16(mp4->file, val16, boxReadBytes);
+			MP4_READ_16(mp4->fd, val16, boxReadBytes);
 			uint16_t frameCount = ntohs(val16);
 			ULOGD("- stsd: frame_count=%" PRIu16, frameCount);
 
 			/* 'compressorname' */
 			char compressorname[32];
-			size_t count = fread(&compressorname,
-					     sizeof(compressorname),
-					     1,
-					     mp4->file);
-			if (count != 1) {
-				ULOG_ERRNO("fread", errno);
+			ssize_t count = read(mp4->fd,
+					     &compressorname,
+					     sizeof(compressorname));
+			if (count == -1) {
+				ULOG_ERRNO("read", errno);
 				return -errno;
 			}
 			boxReadBytes += sizeof(compressorname);
 			ULOGD("- stsd: compressorname=%s", compressorname);
 
 			/* 'depth' & 'pre_defined' */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			uint16_t depth =
 				(uint16_t)((ntohl(val32) >> 16) & 0xFFFF);
 			ULOGD("- stsd: depth=%" PRIu16, depth);
 
 			/* Codec specific size */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			uint32_t codecSize = ntohl(val32);
 			ULOGD("- stsd: codec_size=%" PRIu32, codecSize);
 
 			/* Codec specific */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			uint32_t codec = ntohl(val32);
 			ULOGD("- stsd: codec=%c%c%c%c",
 			      (char)((codec >> 24) & 0xFF),
@@ -1576,12 +1573,12 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 			CHECK_SIZE(maxBytes, 44);
 
 			/* 'size' */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			uint32_t size = ntohl(val32);
 			ULOGD("- stsd: size=%" PRIu32, size);
 
 			/* 'type' */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			uint32_t type = ntohl(val32);
 			ULOGD("- stsd: type=%c%c%c%c",
 			      (char)((type >> 24) & 0xFF),
@@ -1590,21 +1587,21 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 			      (char)(type & 0xFF));
 
 			/* 'reserved' */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 			/* 'reserved' & 'data_reference_index' */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			uint16_t dataReferenceIndex =
 				(uint16_t)(ntohl(val32) & 0xFFFF);
 			ULOGD("- stsd: data_reference_index=%" PRIu16,
 			      dataReferenceIndex);
 
 			/* 'reserved' */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 			/* 'channelcount' & 'samplesize' */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			track->audioChannelCount =
 				((ntohl(val32) >> 16) & 0xFFFF);
 			track->audioSampleSize = (ntohl(val32) & 0xFFFF);
@@ -1614,21 +1611,21 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 			      track->audioSampleSize);
 
 			/* 'reserved' */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 			/* 'samplerate' */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			track->audioSampleRate = ntohl(val32);
 			ULOGD("- stsd: samplerate=%.2f",
 			      (float)track->audioSampleRate / 65536.);
 
 			/* Codec specific size */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			uint32_t codecSize = ntohl(val32);
 			ULOGD("- stsd: codec_size=%" PRIu32, codecSize);
 
 			/* Codec specific */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			uint32_t codec = ntohl(val32);
 			ULOGD("- stsd: codec=%c%c%c%c",
 			      (char)((codec >> 24) & 0xFF),
@@ -1659,12 +1656,12 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 			CHECK_SIZE(maxBytes, 24);
 
 			/* 'size' */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			uint32_t size = ntohl(val32);
 			ULOGD("- stsd: size=%" PRIu32, size);
 
 			/* 'type' */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			uint32_t type = ntohl(val32);
 			ULOGD("- stsd: type=%c%c%c%c",
 			      (char)((type >> 24) & 0xFF),
@@ -1673,11 +1670,11 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 			      (char)(type & 0xFF));
 
 			/* 'reserved' */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
-			MP4_READ_16(mp4->file, val16, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
+			MP4_READ_16(mp4->fd, val16, boxReadBytes);
 
 			/* 'data_reference_index' */
-			MP4_READ_16(mp4->file, val16, boxReadBytes);
+			MP4_READ_16(mp4->fd, val16, boxReadBytes);
 			uint16_t dataReferenceIndex = ntohl(val16);
 			ULOGD("- stsd: size=%d", dataReferenceIndex);
 
@@ -1686,7 +1683,7 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 			for (k = 0;
 			     (k < sizeof(str) - 2) && (boxReadBytes < maxBytes);
 			     k++) {
-				MP4_READ_8(mp4->file, str[k], boxReadBytes);
+				MP4_READ_8(mp4->fd, str[k], boxReadBytes);
 				if (str[k] == '\0')
 					break;
 			}
@@ -1698,7 +1695,7 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 			for (k = 0;
 			     (k < sizeof(str) - 2) && (boxReadBytes < maxBytes);
 			     k++) {
-				MP4_READ_8(mp4->file, str[k], boxReadBytes);
+				MP4_READ_8(mp4->fd, str[k], boxReadBytes);
 				if (str[k] == '\0')
 					break;
 			}
@@ -1719,7 +1716,7 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 	}
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -1746,7 +1743,7 @@ static off_t mp4_box_stts_read(struct mp4_file *mp4,
 	CHECK_SIZE(maxBytes, 8);
 
 	/* 'version' & 'flags' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t flags = ntohl(val32);
 	uint8_t version = (flags >> 24) & 0xFF;
 	flags &= ((1 << 24) - 1);
@@ -1754,7 +1751,7 @@ static off_t mp4_box_stts_read(struct mp4_file *mp4,
 	ULOGD("- stts: flags=%" PRIu32, flags);
 
 	/* 'entry_count' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	track->timeToSampleEntryCount = ntohl(val32);
 	ULOGD("- stts: entry_count=%" PRIu32, track->timeToSampleEntryCount);
 
@@ -1771,11 +1768,11 @@ static off_t mp4_box_stts_read(struct mp4_file *mp4,
 	unsigned int i;
 	for (i = 0; i < track->timeToSampleEntryCount; i++) {
 		/* 'sample_count' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->timeToSampleEntries[i].sampleCount = ntohl(val32);
 
 		/* 'sample_delta' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->timeToSampleEntries[i].sampleDelta = ntohl(val32);
 #if LOG_ALL
 		ULOGD("- stts: sample_count=%" PRIu32 " sample_delta=%" PRIu32,
@@ -1785,7 +1782,7 @@ static off_t mp4_box_stts_read(struct mp4_file *mp4,
 	}
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -1812,7 +1809,7 @@ static off_t mp4_box_stss_read(struct mp4_file *mp4,
 	CHECK_SIZE(maxBytes, 8);
 
 	/* 'version' & 'flags' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t flags = ntohl(val32);
 	uint8_t version = (flags >> 24) & 0xFF;
 	flags &= ((1 << 24) - 1);
@@ -1820,7 +1817,7 @@ static off_t mp4_box_stss_read(struct mp4_file *mp4,
 	ULOGD("- stss: flags=%" PRIu32, flags);
 
 	/* 'entry_count' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	track->syncSampleEntryCount = ntohl(val32);
 	ULOGD("- stss: entry_count=%" PRIu32, track->syncSampleEntryCount);
 
@@ -1836,7 +1833,7 @@ static off_t mp4_box_stss_read(struct mp4_file *mp4,
 	unsigned int i;
 	for (i = 0; i < track->syncSampleEntryCount; i++) {
 		/* 'sample_number' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->syncSampleEntries[i] = ntohl(val32);
 #if LOG_ALL
 		ULOGD("- stss: sample_number=%" PRIu32,
@@ -1845,7 +1842,7 @@ static off_t mp4_box_stss_read(struct mp4_file *mp4,
 	}
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -1872,7 +1869,7 @@ static off_t mp4_box_stsz_read(struct mp4_file *mp4,
 	CHECK_SIZE(maxBytes, 12);
 
 	/* 'version' & 'flags' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t flags = ntohl(val32);
 	uint8_t version = (flags >> 24) & 0xFF;
 	flags &= ((1 << 24) - 1);
@@ -1880,12 +1877,12 @@ static off_t mp4_box_stsz_read(struct mp4_file *mp4,
 	ULOGD("- stsz: flags=%" PRIu32, flags);
 
 	/* 'sample_size' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t sampleSize = ntohl(val32);
 	ULOGD("- stsz: sample_size=%" PRIu32, sampleSize);
 
 	/* 'sample_count' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	track->sampleCount = ntohl(val32);
 	ULOGD("- stsz: sample_count=%" PRIu32, track->sampleCount);
 
@@ -1901,7 +1898,7 @@ static off_t mp4_box_stsz_read(struct mp4_file *mp4,
 		unsigned int i;
 		for (i = 0; i < track->sampleCount; i++) {
 			/* 'entry_size' */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			track->sampleSize[i] = ntohl(val32);
 			if (track->sampleSize[i] > track->sampleMaxSize)
 				track->sampleMaxSize = track->sampleSize[i];
@@ -1917,7 +1914,7 @@ static off_t mp4_box_stsz_read(struct mp4_file *mp4,
 	}
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -1944,7 +1941,7 @@ static off_t mp4_box_stsc_read(struct mp4_file *mp4,
 	CHECK_SIZE(maxBytes, 8);
 
 	/* 'version' & 'flags' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t flags = ntohl(val32);
 	uint8_t version = (flags >> 24) & 0xFF;
 	flags &= ((1 << 24) - 1);
@@ -1952,7 +1949,7 @@ static off_t mp4_box_stsc_read(struct mp4_file *mp4,
 	ULOGD("- stsc: flags=%" PRIu32, flags);
 
 	/* 'entry_count' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	track->sampleToChunkEntryCount = ntohl(val32);
 	ULOGD("- stsc: entry_count=%" PRIu32, track->sampleToChunkEntryCount);
 
@@ -1969,7 +1966,7 @@ static off_t mp4_box_stsc_read(struct mp4_file *mp4,
 	unsigned int i;
 	for (i = 0; i < track->sampleToChunkEntryCount; i++) {
 		/* 'first_chunk' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->sampleToChunkEntries[i].firstChunk = ntohl(val32);
 #if LOG_ALL
 		ULOGD("- stsc: first_chunk=%" PRIu32,
@@ -1977,7 +1974,7 @@ static off_t mp4_box_stsc_read(struct mp4_file *mp4,
 #endif /* LOG_ALL */
 
 		/* 'samples_per_chunk' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->sampleToChunkEntries[i].samplesPerChunk = ntohl(val32);
 #if LOG_ALL
 		ULOGD("- stsc: samples_per_chunk=%" PRIu32,
@@ -1985,7 +1982,7 @@ static off_t mp4_box_stsc_read(struct mp4_file *mp4,
 #endif /* LOG_ALL */
 
 		/* 'sample_description_index' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->sampleToChunkEntries[i].sampleDescriptionIndex =
 			ntohl(val32);
 #if LOG_ALL
@@ -1995,7 +1992,7 @@ static off_t mp4_box_stsc_read(struct mp4_file *mp4,
 	}
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -2022,7 +2019,7 @@ static off_t mp4_box_stco_read(struct mp4_file *mp4,
 	CHECK_SIZE(maxBytes, 8);
 
 	/* 'version' & 'flags' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t flags = ntohl(val32);
 	uint8_t version = (flags >> 24) & 0xFF;
 	flags &= ((1 << 24) - 1);
@@ -2030,7 +2027,7 @@ static off_t mp4_box_stco_read(struct mp4_file *mp4,
 	ULOGD("- stco: flags=%" PRIu32, flags);
 
 	/* 'entry_count' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	track->chunkCount = ntohl(val32);
 	ULOGD("- stco: entry_count=%" PRIu32, track->chunkCount);
 
@@ -2045,7 +2042,7 @@ static off_t mp4_box_stco_read(struct mp4_file *mp4,
 	unsigned int i;
 	for (i = 0; i < track->chunkCount; i++) {
 		/* 'chunk_offset' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->chunkOffset[i] = (uint64_t)ntohl(val32);
 #if LOG_ALL
 		ULOGD("- stco: chunk_offset=%" PRIu64, track->chunkOffset[i]);
@@ -2053,7 +2050,7 @@ static off_t mp4_box_stco_read(struct mp4_file *mp4,
 	}
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -2080,7 +2077,7 @@ static off_t mp4_box_co64_read(struct mp4_file *mp4,
 	CHECK_SIZE(maxBytes, 8);
 
 	/* 'version' & 'flags' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t flags = ntohl(val32);
 	uint8_t version = (flags >> 24) & 0xFF;
 	flags &= ((1 << 24) - 1);
@@ -2088,7 +2085,7 @@ static off_t mp4_box_co64_read(struct mp4_file *mp4,
 	ULOGD("- co64: flags=%" PRIu32, flags);
 
 	/* 'entry_count' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	track->chunkCount = ntohl(val32);
 	ULOGD("- co64: entry_count=%" PRIu32, track->chunkCount);
 
@@ -2103,9 +2100,9 @@ static off_t mp4_box_co64_read(struct mp4_file *mp4,
 	unsigned int i;
 	for (i = 0; i < track->chunkCount; i++) {
 		/* 'chunk_offset' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->chunkOffset[i] = (uint64_t)ntohl(val32) << 32;
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->chunkOffset[i] |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
 #if LOG_ALL
 		ULOGD("- co64: chunk_offset=%" PRIu64, track->chunkOffset[i]);
@@ -2113,7 +2110,7 @@ static off_t mp4_box_co64_read(struct mp4_file *mp4,
 	}
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -2135,12 +2132,12 @@ static off_t mp4_box_xyz_read(struct mp4_file *mp4,
 	CHECK_SIZE(maxBytes, 4);
 
 	/* 'location_size' */
-	MP4_READ_16(mp4->file, val16, boxReadBytes);
+	MP4_READ_16(mp4->fd, val16, boxReadBytes);
 	uint16_t locationSize = ntohs(val16);
 	ULOGD("- xyz: location_size=%d", locationSize);
 
 	/* 'language_code' */
-	MP4_READ_16(mp4->file, val16, boxReadBytes);
+	MP4_READ_16(mp4->fd, val16, boxReadBytes);
 	uint16_t languageCode = ntohs(val16);
 	ULOGD("- xyz: language_code=%d", languageCode);
 
@@ -2166,10 +2163,9 @@ static off_t mp4_box_xyz_read(struct mp4_file *mp4,
 		ULOG_ERRNO("malloc", ENOMEM);
 		return -ENOMEM;
 	}
-	size_t count =
-		fread(mp4->udtaLocationValue, locationSize, 1, mp4->file);
-	if (count != 1) {
-		ULOG_ERRNO("fread", errno);
+	ssize_t count = read(mp4->fd, mp4->udtaLocationValue, locationSize);
+	if (count == -1) {
+		ULOG_ERRNO("read", errno);
 		return -errno;
 	}
 	boxReadBytes += locationSize;
@@ -2177,7 +2173,7 @@ static off_t mp4_box_xyz_read(struct mp4_file *mp4,
 	ULOGD("- xyz: location=%s", mp4->udtaLocationValue);
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -2199,17 +2195,17 @@ static int mp4_ilst_sub_box_count(struct mp4_file *mp4,
 
 	CHECK_SIZE(maxBytes, 8);
 
-	originalOffset = ftello(mp4->file);
+	originalOffset = lseek(mp4->fd, 0, SEEK_CUR);
 
 	while ((totalReadBytes + 8 <= maxBytes) && (!lastBox)) {
 		boxReadBytes = 0;
 
 		/* Box size */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		uint32_t size = ntohl(val32);
 
 		/* Box type */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 		if (size == 0) {
 			/* Box extends to end of file */
@@ -2220,9 +2216,9 @@ static int mp4_ilst_sub_box_count(struct mp4_file *mp4,
 			CHECK_SIZE(maxBytes, boxReadBytes + 16);
 
 			/* Large size */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			realBoxSize = (uint64_t)ntohl(val32) << 32;
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			realBoxSize |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
 		} else
 			realBoxSize = size;
@@ -2231,13 +2227,13 @@ static int mp4_ilst_sub_box_count(struct mp4_file *mp4,
 
 		/* Skip the rest of the box */
 		MP4_READ_SKIP(
-			mp4->file, realBoxSize - boxReadBytes, boxReadBytes);
+			mp4->fd, realBoxSize - boxReadBytes, boxReadBytes);
 		totalReadBytes += realBoxSize;
 	}
 
-	int ret = fseeko(mp4->file, -totalReadBytes, SEEK_CUR);
-	if (ret != 0) {
-		ULOG_ERRNO("fseeko", errno);
+	off_t ret = lseek(mp4->fd, -totalReadBytes, SEEK_CUR);
+	if (ret == -1) {
+		ULOG_ERRNO("lseek", errno);
 		return -errno;
 	}
 
@@ -2262,7 +2258,7 @@ static off_t mp4_box_meta_keys_read(struct mp4_file *mp4,
 	CHECK_SIZE(maxBytes, 8);
 
 	/* 'version' & 'flags' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t flags = ntohl(val32);
 	uint8_t version = (flags >> 24) & 0xFF;
 	flags &= ((1 << 24) - 1);
@@ -2270,7 +2266,7 @@ static off_t mp4_box_meta_keys_read(struct mp4_file *mp4,
 	ULOGD("- keys: flags=%" PRIu32, flags);
 
 	/* 'entry_count' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	metadataCount = ntohl(val32);
 	ULOGD("- keys: entry_count=%" PRIu32, metadataCount);
 
@@ -2301,7 +2297,7 @@ static off_t mp4_box_meta_keys_read(struct mp4_file *mp4,
 
 	for (i = 0; i < metadataCount; i++) {
 		/* 'key_size' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		uint32_t keySize = ntohl(val32);
 		ULOGD("- keys: key_size=%" PRIu32, keySize);
 
@@ -2314,7 +2310,7 @@ static off_t mp4_box_meta_keys_read(struct mp4_file *mp4,
 		keySize -= 8;
 
 		/* 'key_namespace' */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		uint32_t keyNamespace = ntohl(val32);
 		ULOGD("- keys: key_namespace=%c%c%c%c",
 		      (char)((keyNamespace >> 24) & 0xFF),
@@ -2329,9 +2325,9 @@ static off_t mp4_box_meta_keys_read(struct mp4_file *mp4,
 			ULOG_ERRNO("malloc", ENOMEM);
 			return -ENOMEM;
 		}
-		size_t count = fread(metadataKey[i], keySize, 1, mp4->file);
-		if (count != 1) {
-			ULOG_ERRNO("fread", errno);
+		ssize_t count = read(mp4->fd, metadataKey[i], keySize);
+		if (count == -1) {
+			ULOG_ERRNO("read", errno);
 			return -errno;
 		}
 		boxReadBytes += keySize;
@@ -2340,7 +2336,7 @@ static off_t mp4_box_meta_keys_read(struct mp4_file *mp4,
 	}
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -2365,7 +2361,7 @@ static off_t mp4_box_meta_data_read(struct mp4_file *mp4,
 	CHECK_SIZE(maxBytes, 9);
 
 	/* 'version' & 'class' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t clazz = ntohl(val32);
 	uint8_t version = (clazz >> 24) & 0xFF;
 	clazz &= 0xFF;
@@ -2373,7 +2369,7 @@ static off_t mp4_box_meta_data_read(struct mp4_file *mp4,
 	ULOGD("- data: class=%" PRIu32, clazz);
 
 	/* 'reserved' */
-	MP4_READ_32(mp4->file, val32, boxReadBytes);
+	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 	unsigned int valueLen = maxBytes - boxReadBytes;
 
@@ -2408,12 +2404,10 @@ static off_t mp4_box_meta_data_read(struct mp4_file *mp4,
 				ULOG_ERRNO("malloc", ENOMEM);
 				return -ENOMEM;
 			}
-			size_t count = fread(mp4->udtaMetadataValue[idx],
-					     valueLen,
-					     1,
-					     mp4->file);
-			if (count != 1) {
-				ULOG_ERRNO("fread", errno);
+			ssize_t count = read(
+				mp4->fd, mp4->udtaMetadataValue[idx], valueLen);
+			if (count == -1) {
+				ULOG_ERRNO("read", errno);
 				return -errno;
 			}
 			boxReadBytes += valueLen;
@@ -2441,12 +2435,10 @@ static off_t mp4_box_meta_data_read(struct mp4_file *mp4,
 					ULOG_ERRNO("malloc", ENOMEM);
 					return -ENOMEM;
 				}
-				size_t count = fread(metadataValue[idx],
-						     valueLen,
-						     1,
-						     mp4->file);
-				if (count != 1) {
-					ULOG_ERRNO("fread", errno);
+				ssize_t count = read(
+					mp4->fd, metadataValue[idx], valueLen);
+				if (count == -1) {
+					ULOG_ERRNO("read", errno);
 					return -errno;
 				}
 				boxReadBytes += valueLen;
@@ -2464,7 +2456,7 @@ static off_t mp4_box_meta_data_read(struct mp4_file *mp4,
 		   (track == NULL)) {
 		uint32_t type = box->parent->type;
 		if (type == MP4_METADATA_TAG_TYPE_COVER) {
-			mp4->udtaCoverOffset = ftello(mp4->file);
+			mp4->udtaCoverOffset = lseek(mp4->fd, 0, SEEK_CUR);
 			mp4->udtaCoverSize = valueLen;
 			switch (clazz) {
 			case MP4_METADATA_CLASS_JPEG:
@@ -2486,7 +2478,7 @@ static off_t mp4_box_meta_data_read(struct mp4_file *mp4,
 		} else if ((type > 0) && (type <= mp4->metaMetadataCount) &&
 			   (!strcmp(mp4->metaMetadataKey[type - 1],
 				    MP4_METADATA_KEY_COVER))) {
-			mp4->metaCoverOffset = ftello(mp4->file);
+			mp4->metaCoverOffset = lseek(mp4->fd, 0, SEEK_CUR);
 			mp4->metaCoverSize = valueLen;
 			switch (clazz) {
 			case MP4_METADATA_CLASS_JPEG:
@@ -2509,7 +2501,7 @@ static off_t mp4_box_meta_data_read(struct mp4_file *mp4,
 	}
 
 	/* Skip the rest of the box */
-	MP4_READ_SKIP(mp4->file, maxBytes - boxReadBytes, boxReadBytes);
+	MP4_READ_SKIP(mp4->fd, maxBytes - boxReadBytes, boxReadBytes);
 
 	return boxReadBytes;
 }
@@ -2521,13 +2513,33 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			    struct mp4_track *track)
 {
 	off_t parentReadBytes = 0;
+	off_t currOff = 0;
+	off_t eof = 0;
 	int ret = 0, firstBox = 1, lastBox = 0;
 
 	ULOG_ERRNO_RETURN_ERR_IF(mp4 == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(parent == NULL, EINVAL);
 
-	while ((!feof(mp4->file)) && (!lastBox) &&
-	       (parentReadBytes + 8 < maxBytes)) {
+
+	errno = 0;
+	currOff = lseek(mp4->fd, 0, SEEK_CUR);
+	if (currOff == -1) {
+		ULOG_ERRNO("lseek", errno);
+		return -errno;
+	}
+	eof = lseek(mp4->fd, 0, SEEK_END);
+	if (eof == -1) {
+		ULOG_ERRNO("lseek", errno);
+		return -errno;
+	}
+
+	currOff = lseek(mp4->fd, currOff, SEEK_SET);
+	if (currOff == -1) {
+		ULOG_ERRNO("lseek", errno);
+		return -errno;
+	}
+
+	while (currOff < eof && !lastBox && (parentReadBytes + 8 < maxBytes)) {
 		off_t boxReadBytes = 0, realBoxSize;
 		uint32_t val32;
 
@@ -2539,11 +2551,11 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		}
 
 		/* Box size */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		box->size = ntohl(val32);
 
 		/* Box type */
-		MP4_READ_32(mp4->file, val32, boxReadBytes);
+		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		box->type = ntohl(val32);
 
 		/* MP4 file format validity: the first box should be 'ftyp' */
@@ -2557,12 +2569,12 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		if ((parent->type == MP4_ILST_BOX) &&
 		    (box->type <= mp4->metaMetadataCount))
 			ULOGD("offset 0x%" PRIx64 " metadata box size %" PRIu32,
-			      (int64_t)ftello(mp4->file) - 8,
+			      (int64_t)lseek(mp4->fd, 0, SEEK_CUR) - 8,
 			      box->size);
 		else
 			ULOGD("offset 0x%" PRIx64
 			      " box '%c%c%c%c' size %" PRIu32,
-			      (int64_t)ftello(mp4->file) - 8,
+			      (int64_t)lseek(mp4->fd, 0, SEEK_CUR) - 8,
 			      (box->type >> 24) & 0xFF,
 			      (box->type >> 16) & 0xFF,
 			      (box->type >> 8) & 0xFF,
@@ -2577,9 +2589,9 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			CHECK_SIZE(maxBytes, parentReadBytes + 16);
 
 			/* Large size */
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			box->largesize = (uint64_t)ntohl(val32) << 32;
-			MP4_READ_32(mp4->file, val32, boxReadBytes);
+			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			box->largesize |=
 				(uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
 			realBoxSize = box->largesize;
@@ -2603,10 +2615,10 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 				   sizeof(box->uuid));
 
 			/* Box extended type */
-			size_t count = fread(
-				box->uuid, sizeof(box->uuid), 1, mp4->file);
-			if (count != 1) {
-				ULOG_ERRNO("fread", errno);
+			ssize_t count =
+				read(mp4->fd, box->uuid, sizeof(box->uuid));
+			if (count == -1) {
+				ULOG_ERRNO("read", errno);
 				return -errno;
 			}
 			boxReadBytes += sizeof(box->uuid);
@@ -2781,7 +2793,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 				CHECK_SIZE(realBoxSize - boxReadBytes, 4);
 
 				/* 'version' & 'flags' */
-				MP4_READ_32(mp4->file, val32, boxReadBytes);
+				MP4_READ_32(mp4->fd, val32, boxReadBytes);
 				uint32_t flags = ntohl(val32);
 				uint8_t version = (flags >> 24) & 0xFF;
 				flags &= ((1 << 24) - 1);
@@ -2921,18 +2933,24 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			ret = -EIO;
 			break;
 		}
-		int _ret =
-			fseeko(mp4->file, realBoxSize - boxReadBytes, SEEK_CUR);
-		if (_ret != 0) {
+		off_t _ret =
+			lseek(mp4->fd, realBoxSize - boxReadBytes, SEEK_CUR);
+		if (_ret == -1) {
 			ULOGE("failed to seek %" PRIi64
 			      " bytes forward in file",
 			      (int64_t)realBoxSize - boxReadBytes);
-			ret = -EIO;
+			ret = -errno;
 			break;
 		}
 
 		parentReadBytes += realBoxSize;
 		firstBox = 0;
+
+		currOff = lseek(mp4->fd, 0, SEEK_CUR);
+		if (currOff == -1) {
+			ULOG_ERRNO("lseek", errno);
+			return -errno;
+		}
 	}
 
 	return (ret < 0) ? ret : parentReadBytes;

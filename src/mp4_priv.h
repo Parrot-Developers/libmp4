@@ -41,6 +41,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #ifdef _WIN32
 #	include <winsock2.h>
@@ -267,7 +268,7 @@ struct mp4_track {
 
 
 struct mp4_file {
-	FILE *file;
+	int fd;
 	off_t fileSize;
 	off_t readBytes;
 	struct mp4_box *root;
@@ -394,7 +395,7 @@ struct mp4_mux_metadata {
 };
 
 struct mp4_mux {
-	FILE *file;
+	int fd;
 	uint64_t duration;
 	uint64_t creation_time;
 	uint64_t modification_time;
@@ -412,10 +413,16 @@ struct mp4_mux {
 
 #define MP4_READ_32(_file, _val32, _readBytes)                                 \
 	do {                                                                   \
-		size_t _count = fread(&_val32, sizeof(uint32_t), 1, _file);    \
-		if (_count != 1) {                                             \
-			ULOG_ERRNO("fread", errno);                            \
+		ssize_t _count = read(_file, &_val32, sizeof(uint32_t));       \
+		if (_count == -1) {                                            \
+			ULOG_ERRNO("read", errno);                             \
 			return -errno;                                         \
+		} else if ((size_t)_count != sizeof(uint32_t)) {               \
+			ULOG_ERRNO("only %zd bytes read instead of %zu",       \
+				   EIO,                                        \
+				   _count,                                     \
+				   sizeof(uint32_t));                          \
+			return -EIO;                                           \
 		}                                                              \
 		_readBytes += sizeof(uint32_t);                                \
 	} while (0)
@@ -423,10 +430,16 @@ struct mp4_mux {
 
 #define MP4_READ_16(_file, _val16, _readBytes)                                 \
 	do {                                                                   \
-		size_t _count = fread(&_val16, sizeof(uint16_t), 1, _file);    \
-		if (_count != 1) {                                             \
-			ULOG_ERRNO("fread", errno);                            \
+		ssize_t _count = read(_file, &_val16, sizeof(uint16_t));       \
+		if (_count == -1) {                                            \
+			ULOG_ERRNO("read", errno);                             \
 			return -errno;                                         \
+		} else if ((size_t)_count != sizeof(uint16_t)) {               \
+			ULOG_ERRNO("only %zd bytes read instead of %zu",       \
+				   EIO,                                        \
+				   _count,                                     \
+				   sizeof(uint16_t));                          \
+			return -EIO;                                           \
 		}                                                              \
 		_readBytes += sizeof(uint16_t);                                \
 	} while (0)
@@ -434,10 +447,16 @@ struct mp4_mux {
 
 #define MP4_READ_8(_file, _val8, _readBytes)                                   \
 	do {                                                                   \
-		size_t _count = fread(&_val8, sizeof(uint8_t), 1, _file);      \
-		if (_count != 1) {                                             \
-			ULOG_ERRNO("fread", errno);                            \
+		ssize_t _count = read(_file, &_val8, sizeof(uint8_t));         \
+		if (_count == -1) {                                            \
+			ULOG_ERRNO("read", errno);                             \
 			return -errno;                                         \
+		} else if ((size_t)_count != sizeof(uint8_t)) {                \
+			ULOG_ERRNO("only %zd bytes read instead of %zu",       \
+				   EIO,                                        \
+				   _count,                                     \
+				   sizeof(uint8_t));                           \
+			return -EIO;                                           \
 		}                                                              \
 		_readBytes += sizeof(uint8_t);                                 \
 	} while (0)
@@ -447,9 +466,9 @@ struct mp4_mux {
 	do {                                                                   \
 		__typeof__(_readBytes) _i_nBytes = _nBytes;                    \
 		if (_i_nBytes > 0) {                                           \
-			int _ret = fseeko(_file, _i_nBytes, SEEK_CUR);         \
-			if (_ret != 0) {                                       \
-				ULOG_ERRNO("fseeko", errno);                   \
+			off_t _ret = lseek(_file, _i_nBytes, SEEK_CUR);        \
+			if (_ret == -1) {                                      \
+				ULOG_ERRNO("lseek", errno);                    \
 				return -errno;                                 \
 			}                                                      \
 			_readBytes += _i_nBytes;                               \
@@ -461,10 +480,16 @@ struct mp4_mux {
 	do {                                                                   \
 		if (_writeBytes + sizeof(uint32_t) > _maxBytes)                \
 			return -ENOSPC;                                        \
-		size_t _count = fwrite(&_val32, sizeof(uint32_t), 1, _file);   \
-		if (_count != 1) {                                             \
-			ULOG_ERRNO("fwrite", errno);                           \
+		ssize_t _count = write(_file, &_val32, sizeof(uint32_t));      \
+		if (_count == -1) {                                            \
+			ULOG_ERRNO("write", errno);                            \
 			return -errno;                                         \
+		} else if ((size_t)_count != sizeof(uint32_t)) {               \
+			ULOG_ERRNO("only %zd bytes written instead of %zu",    \
+				   EIO,                                        \
+				   _count,                                     \
+				   sizeof(uint32_t));                          \
+			return -EIO;                                           \
 		}                                                              \
 		_writeBytes += sizeof(uint32_t);                               \
 	} while (0)
@@ -474,10 +499,16 @@ struct mp4_mux {
 	do {                                                                   \
 		if (_writeBytes + sizeof(uint16_t) > _maxBytes)                \
 			return -ENOSPC;                                        \
-		size_t _count = fwrite(&_val16, sizeof(uint16_t), 1, _file);   \
-		if (_count != 1) {                                             \
-			ULOG_ERRNO("fwrite", errno);                           \
+		ssize_t _count = write(_file, &_val16, sizeof(uint16_t));      \
+		if (_count == -1) {                                            \
+			ULOG_ERRNO("write", errno);                            \
 			return -errno;                                         \
+		} else if ((size_t)_count != sizeof(uint16_t)) {               \
+			ULOG_ERRNO("only %zd bytes written instead of %zu",    \
+				   EIO,                                        \
+				   _count,                                     \
+				   sizeof(uint16_t));                          \
+			return -EIO;                                           \
 		}                                                              \
 		_writeBytes += sizeof(uint16_t);                               \
 	} while (0)
@@ -487,10 +518,16 @@ struct mp4_mux {
 	do {                                                                   \
 		if (_writeBytes + sizeof(uint8_t) > _maxBytes)                 \
 			return -ENOSPC;                                        \
-		size_t _count = fwrite(&_val8, sizeof(uint8_t), 1, _file);     \
-		if (_count != 1) {                                             \
-			ULOG_ERRNO("fwrite", errno);                           \
+		ssize_t _count = write(_file, &_val8, sizeof(uint8_t));        \
+		if (_count == -1) {                                            \
+			ULOG_ERRNO("write", errno);                            \
 			return -errno;                                         \
+		} else if ((size_t)_count != sizeof(uint8_t)) {                \
+			ULOG_ERRNO("only %zd bytes written instead of %zu",    \
+				   EIO,                                        \
+				   _count,                                     \
+				   sizeof(uint8_t));                           \
+			return -EIO;                                           \
 		}                                                              \
 		_writeBytes += sizeof(uint8_t);                                \
 	} while (0)
@@ -501,8 +538,8 @@ struct mp4_mux {
 		__typeof__(_byteCount) _i_nBytes = _byteCount;                 \
 		if (_writeBytes + _i_nBytes > _maxBytes)                       \
 			return -ENOSPC;                                        \
-		if (fseeko(_file, _i_nBytes, SEEK_CUR) != 0) {                 \
-			ULOG_ERRNO("fseeko", errno);                           \
+		if (lseek(_file, _i_nBytes, SEEK_CUR) == -1) {                 \
+			ULOG_ERRNO("lseek", errno);                            \
 			return -errno;                                         \
 		}                                                              \
 		_writeBytes += _i_nBytes;                                      \
@@ -522,11 +559,18 @@ struct mp4_mux {
 				? _i_nBytes                                    \
 				: MP4_WRITE_ZEROES_CHUNK_SIZE;                 \
 		while (_i_nZeroes > 0) {                                       \
-			size_t _count =                                        \
-				fwrite(&_i_zeroes, 1, _i_nZeroes, _file);      \
-			if (_count != _i_nZeroes) {                            \
-				ULOG_ERRNO("fwrite", errno);                   \
+			ssize_t _count = write(_file, &_i_zeroes, _i_nZeroes); \
+			if (_count == -1) {                                    \
+				ULOG_ERRNO("write", errno);                    \
 				return -errno;                                 \
+			} else if ((size_t)_count != _i_nZeroes) {             \
+				ULOG_ERRNO(                                    \
+					"only %zd bytes"                       \
+					"written instead of %zu",              \
+					EIO,                                   \
+					_count,                                \
+					_i_nZeroes);                           \
+				return -EIO;                                   \
 			}                                                      \
 			_writeBytes += _i_nZeroes;                             \
 			_i_nBytes -= _i_nZeroes;                               \
@@ -546,20 +590,28 @@ struct mp4_mux {
 				      " fixing size",                          \
 				      (size_t)_actualSize,                     \
 				      (size_t)_computedSize);                  \
-			if (fseeko(_file, -_actualSize, SEEK_CUR) != 0) {      \
-				ULOG_ERRNO("fseeko", errno);                   \
+			if (lseek(_file, -_actualSize, SEEK_CUR) == -1) {      \
+				ULOG_ERRNO("lseek", errno);                    \
 				return -errno;                                 \
 			}                                                      \
-			size_t _count =                                        \
-				fwrite(&_size32, sizeof(uint32_t), 1, _file);  \
-			if (_count != 1) {                                     \
-				ULOG_ERRNO("fwrite", errno);                   \
+			ssize_t _count =                                       \
+				write(_file, &_size32, sizeof(uint32_t));      \
+			if (_count == -1) {                                    \
+				ULOG_ERRNO("write", errno);                    \
 				return -errno;                                 \
+			} else if ((size_t)_count != sizeof(uint32_t)) {       \
+				ULOG_ERRNO(                                    \
+					"only %zd bytes written"               \
+					"instead of %zu",                      \
+					EIO,                                   \
+					_count,                                \
+					sizeof(uint32_t));                     \
+				return -EIO;                                   \
 			}                                                      \
-			if (fseeko(_file,                                      \
-				   _actualSize - sizeof(uint32_t),             \
-				   SEEK_CUR) != 0) {                           \
-				ULOG_ERRNO("fseeko", errno);                   \
+			if (lseek(_file,                                       \
+				  _actualSize - sizeof(uint32_t),              \
+				  SEEK_CUR) == -1) {                           \
+				ULOG_ERRNO("lseek", errno);                    \
 				return -errno;                                 \
 			}                                                      \
 		}                                                              \

@@ -468,13 +468,13 @@ int mp4_tracks_build(struct mp4_file *mp4)
 			unsigned int sampleSize, readBytes = 0;
 			uint16_t sz;
 			sampleSize = chapTk->sampleSize[i];
-			int _ret = fseeko(
-				mp4->file, chapTk->sampleOffset[i], SEEK_SET);
-			if (_ret != 0) {
-				ULOG_ERRNO("fseeko", errno);
+			off_t _ret = lseek(
+				mp4->fd, chapTk->sampleOffset[i], SEEK_SET);
+			if (_ret == -1) {
+				ULOG_ERRNO("lseek", errno);
 				return -errno;
 			}
-			MP4_READ_16(mp4->file, sz, readBytes);
+			MP4_READ_16(mp4->fd, sz, readBytes);
 			sz = ntohs(sz);
 			if (sz <= sampleSize - readBytes) {
 				char *chapName = malloc(sz + 1);
@@ -482,11 +482,10 @@ int mp4_tracks_build(struct mp4_file *mp4)
 					return -ENOMEM;
 				mp4->chaptersName[mp4->chaptersCount] =
 					chapName;
-				size_t count =
-					fread(chapName, sz, 1, mp4->file);
-				if (count != 1) {
-					ULOG_ERRNO("fread", EIO);
-					return -EIO;
+				ssize_t count = read(mp4->fd, chapName, sz);
+				if (count == -1) {
+					ULOG_ERRNO("read", errno);
+					return -errno;
 				}
 				readBytes += sz;
 				chapName[sz] = '\0';

@@ -27,6 +27,10 @@
 
 #include "mp4_priv.h"
 
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
 
 static int mp4_metadata_build(struct mp4_file *mp4)
 {
@@ -113,6 +117,7 @@ static int mp4_metadata_build(struct mp4_file *mp4)
 int mp4_demux_open(const char *filename, struct mp4_demux **ret_obj)
 {
 	int ret;
+	off_t err;
 	off_t retBytes;
 	struct mp4_demux *demux;
 	struct mp4_file *mp4;
@@ -130,33 +135,27 @@ int mp4_demux_open(const char *filename, struct mp4_demux **ret_obj)
 	mp4 = &demux->mp4;
 	list_init(&mp4->tracks);
 
-	mp4->file = fopen(filename, "rb");
-	if (mp4->file == NULL) {
+	mp4->fd = open(filename, O_RDONLY);
+	if (mp4->fd == -1) {
 		ret = -errno;
-		ULOG_ERRNO("fopen:'%s'", -ret, filename);
+		ULOG_ERRNO("open:'%s'", -ret, filename);
 		goto error;
 	}
 
-	ret = fseeko(mp4->file, 0, SEEK_END);
-	if (ret != 0) {
-		ret = -errno;
-		ULOG_ERRNO("fseeko", -ret);
-		goto error;
-	}
-	mp4->fileSize = ftello(mp4->file);
+	mp4->fileSize = lseek(mp4->fd, 0, SEEK_END);
 	if (mp4->fileSize < 0) {
 		ret = -errno;
-		ULOG_ERRNO("ftello", -ret);
+		ULOG_ERRNO("lseek", -ret);
 		goto error;
 	} else if (mp4->fileSize == 0) {
 		ret = -ENODATA;
 		ULOGW("empty file: '%s'", filename);
 		goto error;
 	}
-	ret = fseeko(mp4->file, 0, SEEK_SET);
-	if (ret != 0) {
+	err = lseek(mp4->fd, 0, SEEK_SET);
+	if (err == -1) {
 		ret = -errno;
-		ULOG_ERRNO("fseeko", -ret);
+		ULOG_ERRNO("lseek", -ret);
 		goto error;
 	}
 
@@ -204,8 +203,8 @@ int mp4_demux_close(struct mp4_demux *demux)
 
 	if (demux) {
 		struct mp4_file *mp4 = &demux->mp4;
-		if (mp4->file)
-			fclose(mp4->file);
+		if (mp4->fd)
+			close(mp4->fd);
 		mp4_box_destroy(mp4->root);
 		mp4_tracks_destroy(mp4);
 		unsigned int i;
@@ -597,19 +596,19 @@ int mp4_demux_get_track_sample(struct mp4_demux *demux,
 	track_sample->size = sample_size;
 	if ((sample_buffer) && (sample_size > 0) &&
 	    (sample_size <= sample_buffer_size)) {
-		int _ret = fseeko(mp4->file, sample_offset, SEEK_SET);
-		if (_ret != 0) {
-			ULOG_ERRNO("fseeko", errno);
+		off_t _ret = lseek(mp4->fd, sample_offset, SEEK_SET);
+		if (_ret == -1) {
+			ULOG_ERRNO("lseek", errno);
 			return -errno;
 		}
-		size_t count = fread(sample_buffer, sample_size, 1, mp4->file);
-		if (count != 1) {
+		ssize_t count = read(mp4->fd, sample_buffer, sample_size);
+		if (count == -1) {
 			track_sample->size = 0;
 			sample_size = 0;
 			_ret = -errno;
 			if (_ret == 0)
 				_ret = -ENODATA;
-			ULOG_ERRNO("fread", -_ret);
+			ULOG_ERRNO("read", -_ret);
 			return _ret;
 		}
 	} else if ((sample_buffer) && (sample_size > sample_buffer_size)) {
@@ -626,19 +625,19 @@ int mp4_demux_get_track_sample(struct mp4_demux *demux,
 		track_sample->metadata_size = metadata_size;
 		if ((metadata_buffer) && (metadata_size > 0) &&
 		    (metadata_size <= metadata_buffer_size)) {
-			int _ret = fseeko(mp4->file, metadata_offset, SEEK_SET);
-			if (_ret != 0) {
-				ULOG_ERRNO("fseeko", errno);
+			off_t _ret = lseek(mp4->fd, metadata_offset, SEEK_SET);
+			if (_ret == -1) {
+				ULOG_ERRNO("lseek", errno);
 				return -errno;
 			}
-			size_t count = fread(
-				metadata_buffer, metadata_size, 1, mp4->file);
-			if (count != 1) {
+			ssize_t count =
+				read(mp4->fd, metadata_buffer, metadata_size);
+			if (count == -1) {
 				track_sample->metadata_size = 0;
 				_ret = -errno;
 				if (_ret == 0)
 					_ret = -ENODATA;
-				ULOG_ERRNO("fread", -_ret);
+				ULOG_ERRNO("read", -_ret);
 				return _ret;
 			}
 		} else if ((metadata_buffer) &&
@@ -946,18 +945,16 @@ int mp4_demux_get_metadata_cover(struct mp4_demux *demux,
 			*cover_type = mp4->finalCoverType;
 		if ((cover_buffer) &&
 		    (mp4->finalCoverSize <= cover_buffer_size)) {
-			int _ret = fseeko(
-				mp4->file, mp4->finalCoverOffset, SEEK_SET);
-			if (_ret != 0) {
-				ULOG_ERRNO("fseeko", errno);
+			off_t _ret =
+				lseek(mp4->fd, mp4->finalCoverOffset, SEEK_SET);
+			if (_ret == -1) {
+				ULOG_ERRNO("lseek", errno);
 				return -errno;
 			}
-			size_t count = fread(cover_buffer,
-					     mp4->finalCoverSize,
-					     1,
-					     mp4->file);
-			if (count != 1) {
-				ULOG_ERRNO("fread", errno);
+			ssize_t count = read(
+				mp4->fd, cover_buffer, mp4->finalCoverSize);
+			if (count == -1) {
+				ULOG_ERRNO("read", errno);
 				return -errno;
 			}
 		} else if (cover_buffer) {

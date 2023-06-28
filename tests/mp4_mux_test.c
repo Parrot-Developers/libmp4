@@ -139,7 +139,7 @@ int main(int argc, char *argv[])
 
 	ret = mp4_demux_open(in, &demux);
 	if (ret < 0) {
-		ULOG_ERRNO("mp4_demux_open", EIO);
+		ULOG_ERRNO("mp4_demux_open", -ret);
 		goto out;
 	}
 	ret = mp4_mux_open(out, 30000, now, now, &mux);
@@ -242,11 +242,7 @@ int main(int argc, char *argv[])
 			char **values = NULL;
 
 			ret = mp4_demux_get_track_metadata_strings(
-				demux,
-				info.id,
-				&meta_count,
-				&keys,
-				&values);
+				demux, info.id, &meta_count, &keys, &values);
 			if (ret < 0) {
 				ULOG_ERRNO(
 					"mp4_demux_get_track_metadata_strings",

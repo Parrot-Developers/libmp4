@@ -27,16 +27,43 @@
 
 #include "mp4_priv.h"
 
+#include <fcntl.h>
 #include <math.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #ifndef _WIN32
 /* For fsync() */
 #	include <unistd.h>
+/* For iov/writev */
+#	include <sys/uio.h>
 #endif
 
 #define MP4_MUX_TABLES_GROW_SIZE 128
 #define MP4_MUX_DEFAULT_TABLE_SIZE_MB 2
 
+#ifdef _WIN32
+
+struct iovec {
+	void *iov_base;
+	size_t iov_len;
+};
+
+static ssize_t writev(int fd, const struct iovec *iov, int iovcnt)
+{
+	ssize_t total = 0, ret;
+	for (int i = 0; i < iovcnt; i++) {
+		ret = write(fd, iov[i].iov_base, iov[i].iov_len);
+		if (ret < 0)
+			return total == 0 ? ret : total;
+		total += ret;
+		if ((size_t)ret != iov[i].iov_len)
+			return total;
+	}
+	return total;
+}
+
+#endif
 
 static struct mp4_mux_track *mp4_mux_get_track(struct mp4_mux *mux,
 					       uint32_t track_id)
@@ -297,8 +324,8 @@ static void mp4_mux_free(struct mp4_mux *mux)
 	if (mux == NULL)
 		return;
 
-	if (mux->file)
-		fclose(mux->file);
+	if (mux->fd != -1)
+		close(mux->fd);
 
 	free(mux->file_metadata.cover);
 
@@ -433,6 +460,7 @@ MP4_API int mp4_mux_open2(const char *filename,
 {
 	struct mp4_mux *mux;
 	off_t len;
+	off_t err;
 	int ret;
 
 	ULOG_ERRNO_RETURN_ERR_IF(ret_obj == NULL, EINVAL);
@@ -450,10 +478,10 @@ MP4_API int mp4_mux_open2(const char *filename,
 	list_init(&mux->tracks);
 	list_init(&mux->metadatas);
 
-	mux->file = fopen(filename, "wb");
-	if (mux->file == NULL) {
+	mux->fd = open(filename, O_WRONLY | O_CREAT, 0600);
+	if (mux->fd == -1) {
 		ret = -errno;
-		ULOG_ERRNO("fopen:'%s'", -ret, filename);
+		ULOG_ERRNO("open:'%s'", -ret, filename);
 		goto error;
 	}
 	mux->creation_time = creation_time + MP4_MAC_TO_UNIX_EPOCH_OFFSET;
@@ -483,10 +511,10 @@ MP4_API int mp4_mux_open2(const char *filename,
 	}
 
 	/* Seek to dataOffset */
-	ret = fseeko(mux->file, mux->data_offset, SEEK_SET);
-	if (ret == -1) {
+	err = lseek(mux->fd, mux->data_offset, SEEK_SET);
+	if (err == -1) {
 		ret = -errno;
-		ULOG_ERRNO("fseeko", -ret);
+		ULOG_ERRNO("lseek", -ret);
 		goto error;
 	}
 	/* Write mdat with size zero */
@@ -498,6 +526,11 @@ MP4_API int mp4_mux_open2(const char *filename,
 	}
 
 	*ret_obj = mux;
+#ifndef _WIN32
+	fsync(mux->fd);
+#else
+	ULOGW("fsync not available, mp4 file not sync'ed on disk");
+#endif
 	return 0;
 
 error:
@@ -514,6 +547,7 @@ static int mp4_mux_sync_internal(struct mp4_mux *mux, bool allow_boxes_after)
 	int ret;
 	uint32_t duration = 0;
 	off_t end;
+	off_t err;
 	uint64_t len;
 
 	int has_meta_meta = 0;
@@ -524,17 +558,17 @@ static int mp4_mux_sync_internal(struct mp4_mux *mux, bool allow_boxes_after)
 		return 0;
 
 	/* Fix moov size */
-	end = ftello(mux->file);
+	end = lseek(mux->fd, 0, SEEK_CUR);
 	if (end == -1) {
 		ret = -errno;
-		ULOG_ERRNO("ftello", -ret);
+		ULOG_ERRNO("lseek", -ret);
 		goto out;
 	}
 	len = end - mux->data_offset - 8;
-	ret = fseeko(mux->file, mux->data_offset, SEEK_SET);
-	if (ret == -1) {
+	err = lseek(mux->fd, mux->data_offset, SEEK_SET);
+	if (err == -1) {
 		ret = -errno;
-		ULOG_ERRNO("fseeko", -ret);
+		ULOG_ERRNO("lseek", -ret);
 		goto out;
 	}
 	end = mp4_box_mdat_write(mux, len);
@@ -793,10 +827,10 @@ static int mp4_mux_sync_internal(struct mp4_mux *mux, bool allow_boxes_after)
 		}
 	}
 	/* Write box at start */
-	ret = fseeko(mux->file, mux->boxes_offset, SEEK_SET);
-	if (ret == -1) {
+	err = lseek(mux->fd, mux->boxes_offset, SEEK_SET);
+	if (err == -1) {
 		ret = -errno;
-		ULOG_ERRNO("fseeko", -ret);
+		ULOG_ERRNO("lseek", -ret);
 		goto out;
 	}
 	ret = moov->writer.func(
@@ -812,10 +846,10 @@ static int mp4_mux_sync_internal(struct mp4_mux *mux, bool allow_boxes_after)
 		}
 	} else if (ret == -ENOSPC && allow_boxes_after) {
 		/* Not enough space, rewrite free, then put boxes at the end */
-		ret = fseeko(mux->file, mux->boxes_offset, SEEK_SET);
-		if (ret == -1) {
+		err = lseek(mux->fd, mux->boxes_offset, SEEK_SET);
+		if (err == -1) {
 			ret = -errno;
-			ULOG_ERRNO("fseeko", -ret);
+			ULOG_ERRNO("lseek", -ret);
 			goto out;
 		}
 		end = mp4_box_free_write(mux,
@@ -825,10 +859,10 @@ static int mp4_mux_sync_internal(struct mp4_mux *mux, bool allow_boxes_after)
 			ULOG_ERRNO("mp4_box_free_write", -ret);
 			goto out;
 		}
-		ret = fseeko(mux->file, 0, SEEK_END);
-		if (ret == -1) {
+		err = lseek(mux->fd, 0, SEEK_END);
+		if (err == -1) {
 			ret = -errno;
-			ULOG_ERRNO("fseeko", -ret);
+			ULOG_ERRNO("lseek", -ret);
 			goto out;
 		}
 		ret = moov->writer.func(mux, moov, UINT32_MAX);
@@ -840,7 +874,7 @@ static int mp4_mux_sync_internal(struct mp4_mux *mux, bool allow_boxes_after)
 
 out:
 	/* Seek back to end */
-	fseeko(mux->file, 0, SEEK_END);
+	lseek(mux->fd, 0, SEEK_END);
 	return ret;
 }
 
@@ -855,11 +889,8 @@ MP4_API int mp4_mux_sync(struct mp4_mux *mux)
 	if (ret != 0)
 		return ret;
 
-	ret = fflush(mux->file);
-	if (ret != 0)
-		return -errno;
 #ifndef _WIN32
-	ret = fsync(fileno(mux->file));
+	ret = fsync(mux->fd);
 	if (ret != 0)
 		return -errno;
 #else
@@ -1270,17 +1301,31 @@ MP4_API int mp4_mux_track_add_scattered_sample(
 {
 	int ret = 0;
 	struct mp4_mux_track *track;
+	struct iovec *iov;
+	ssize_t written;
+	ssize_t total_size = 0;
+	off_t offset = 0;
 
 	ULOG_ERRNO_RETURN_ERR_IF(mux == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(sample == NULL, EINVAL);
 
-	track = mp4_mux_get_track(mux, track_id);
-	if (!track)
-		return -ENOENT;
+	iov = calloc(sample->nbuffers, sizeof(*iov));
+	if (!iov) {
+		ret = -ENOMEM;
+		goto out;
+	}
 
-	size_t total_size = 0;
-	for (int i = 0; i < sample->nbuffers; i++)
+	track = mp4_mux_get_track(mux, track_id);
+	if (!track) {
+		ret = -ENOENT;
+		goto out;
+	}
+
+	for (int i = 0; i < sample->nbuffers; i++) {
+		iov[i].iov_base = (void *)sample->buffers[i];
+		iov[i].iov_len = sample->len[i];
 		total_size += sample->len[i];
+	}
 
 	ULOGD("adding a %ssample of size %zu at dts %" PRIi64
 	      " to track %d(type %d)",
@@ -1293,15 +1338,15 @@ MP4_API int mp4_mux_track_add_scattered_sample(
 	/* Grow arrays if needed */
 	ret = mp4_mux_grow_samples(track, 1);
 	if (ret != 0)
-		return ret;
+		goto out;
 	ret = mp4_mux_grow_chunks(track, 1);
 	if (ret != 0)
-		return ret;
+		goto out;
 
-	off_t offset = ftello(mux->file);
+	offset = lseek(mux->fd, 0, SEEK_CUR);
 	if (offset == -1) {
 		ret = -errno;
-		return ret;
+		goto out;
 	}
 
 	track->samples.sizes[track->samples.count] = total_size;
@@ -1313,19 +1358,18 @@ MP4_API int mp4_mux_track_add_scattered_sample(
 	if (sample->sync && track->type == MP4_TRACK_TYPE_VIDEO) {
 		ret = mp4_mux_grow_sync(track, 1);
 		if (ret != 0)
-			return ret;
+			goto out;
 		track->sync.entries[track->sync.count] =
 			track->samples.count + 1;
 	}
 
-	for (int i = 0; i < sample->nbuffers; i++) {
-		ret = fwrite(sample->buffers[i], sample->len[i], 1, mux->file);
-		if (ret != 1) {
-			offset = fseeko(mux->file, offset, SEEK_SET);
-			if (offset == -1)
-				ULOG_ERRNO("fseeko", errno);
-			return -EIO;
-		}
+	written = writev(mux->fd, iov, sample->nbuffers);
+	if (written == -1 || written < total_size) {
+		offset = lseek(mux->fd, offset, SEEK_SET);
+		if (offset == -1)
+			ULOG_ERRNO("lseek", errno);
+		ret = -errno;
+		goto out;
 	}
 
 
@@ -1334,7 +1378,10 @@ MP4_API int mp4_mux_track_add_scattered_sample(
 	if (sample->sync && track->type == MP4_TRACK_TYPE_VIDEO)
 		track->sync.count++;
 
-	return 0;
+out:
+	if (iov)
+		free(iov);
+	return ret;
 }
 
 
