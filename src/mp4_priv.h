@@ -148,6 +148,8 @@
 #define MP4_METADATA_TAG_TYPE_COVER         0x636f7672 /* "covr" */
 /* clang-format on */
 
+#define MP4_METADATA_TAG_TYPE_STS 0x00737473 /* ".sts"*/
+
 #define MP4_METADATA_KEY_COVER "com.apple.quicktime.artwork"
 
 #define MP4_MAC_TO_UNIX_EPOCH_OFFSET (0x7c25b080UL)
