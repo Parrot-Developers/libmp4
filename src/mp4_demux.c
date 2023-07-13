@@ -761,8 +761,7 @@ int mp4_demux_get_track_sample(struct mp4_demux * demux,
 			       unsigned int sample_buffer_size,
 			       uint8_t *metadata_buffer,
 			       unsigned int metadata_buffer_size,
-			       struct mp4_track_sample *track_sample,
-				   bool direction)
+			       struct mp4_track_sample *track_sample)
 {
 	struct mp4_file *mp4;
 	struct mp4_track *tk = NULL;
@@ -783,19 +782,10 @@ int mp4_demux_get_track_sample(struct mp4_demux * demux,
 	}
 
 	memset(track_sample, 0, sizeof(*track_sample));
-	if (direction)
+
+	if (tk->nextSample >= tk->sampleCount)
 	{
-		if (tk->nextSample >= tk->sampleCount)
-		{
-			return 0;
-		}
-	}
-	else
-	{
-		if (tk->nextSample < 0)
-		{
-			return 0;
-		}
+		return 0;
 	}
 	
 	sample_size = tk->sampleSize[tk->nextSample];
@@ -861,21 +851,13 @@ int mp4_demux_get_track_sample(struct mp4_demux * demux,
 		((tk->pendingSeekTime) && (sampleTime < tk->pendingSeekTime));
 	if (sampleTime >= tk->pendingSeekTime)
 		tk->pendingSeekTime = 0;
+		
 	track_sample->dts = sampleTime;
-	if (direction)
-	{
-		track_sample->next_dts =
-			(tk->nextSample < tk->sampleCount - 1)
-				? tk->sampleDecodingTime[tk->nextSample + 1]
-				: 0;
-	}
-	else
-	{
-		track_sample->next_dts =
-			(tk->nextSample > 0)
-				? tk->sampleDecodingTime[tk->nextSample - 1]
-				: 0;
-	}
+	track_sample->next_dts =
+		(tk->nextSample < tk->sampleCount - 1)
+			? tk->sampleDecodingTime[tk->nextSample + 1]
+			: 0;
+
 	idx = mp4_track_find_sample_by_time(
 		tk, sampleTime, MP4_TIME_CMP_LT, 1, tk->nextSample);
 	if (idx >= 0)
