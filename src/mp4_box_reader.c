@@ -1567,6 +1567,13 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 				boxReadBytes += ret;
 				break;
 			case MP4_AUDIO_DECODER_CONFIG_BOX:
+				/*This atom contains an MPEG-4 elementary stream
+				 * descriptor atom. This is a required extension
+				 * to the video sample description for MPEG-4
+				 * video. This extension appears in video sample
+				 * descriptions only when the codec type is
+				 * 'mp4v'.*/
+				track->vdc.codec = MP4_VIDEO_CODEC_MP4V;
 				printf("\nWarning: skipping stsd box\n");
 				break;
 			default:
