@@ -250,6 +250,11 @@ struct mp4_mux_sample {
 	int64_t dts;
 };
 
+struct mp4_mux_prepend_buffer {
+	const uint8_t *buffer;
+	size_t len;
+};
+
 
 struct mp4_mux_scattered_sample {
 	const uint8_t *const *buffers;
@@ -472,6 +477,11 @@ MP4_API int mp4_mux_track_add_sample(struct mp4_mux *mux,
 				     int track_id,
 				     const struct mp4_mux_sample *sample);
 
+
+MP4_API int mp4_mux_track_add_sample_with_prepend_buffer(struct mp4_mux *mux,
+				     int track_id,
+				     const struct mp4_mux_prepend_buffer *prepend_buffer,
+					 const struct mp4_mux_sample *sample);
 
 MP4_API int mp4_mux_track_add_scattered_sample(
 	struct mp4_mux *mux,

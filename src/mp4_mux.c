@@ -1394,6 +1394,84 @@ MP4_API int mp4_mux_track_add_scattered_sample(
 	return 0;
 }
 
+MP4_API int mp4_mux_track_add_sample_with_prepend_buffer(struct mp4_mux *mux,
+				     int track_id,
+				     const struct mp4_mux_prepend_buffer *prepend_buffer,
+					 const struct mp4_mux_sample *sample)
+{
+	ULOG_ERRNO_RETURN_ERR_IF(mux == NULL, EINVAL);
+	ULOG_ERRNO_RETURN_ERR_IF(sample == NULL, EINVAL);
+
+	int ret = 0;
+	struct mp4_mux_track *track;
+
+	track = mp4_mux_get_track(mux, track_id);
+	if (!track)
+		return -ENOENT;
+
+	size_t total_size = 0;
+	total_size = prepend_buffer->len;
+	total_size += sample->len;
+
+	ULOGD("adding a %ssample of size %zu at dts %" PRIi64
+	      " to track %d(type %d)",
+	      sample->sync ? "sync " : "",
+	      total_size,
+	      sample->dts,
+	      track_id,
+	      track->type);
+
+	ret = mp4_mux_grow_samples(track, 1);
+	if (ret != 0)
+		return ret;
+	ret = mp4_mux_grow_chunks(track, 1);
+	if (ret != 0)
+		return ret;
+
+	ptrdiff_t offset = ftello(mux->file);
+	if (offset == -1) {
+		ret = -errno;
+		return ret;
+	}
+
+	track->samples.sizes[track->samples.count] = total_size;
+	track->samples.decoding_times[track->samples.count] = sample->dts;
+	track->samples.offsets[track->samples.count] = offset;
+
+	track->chunks.offsets[track->chunks.count] = offset;
+
+	if (sample->sync && track->type == MP4_TRACK_TYPE_VIDEO) { // if keyframe
+		ret = mp4_mux_grow_sync(track, 1); // increase the sync array, where we track the keyframes
+		if (ret != 0)
+			return ret;
+		track->sync.entries[track->sync.count] =
+			track->samples.count + 1;
+	}
+
+	ret = fwrite(prepend_buffer->buffer, prepend_buffer->len, 1, mux->file);
+			if (ret != 1) {
+				offset = fseeko(mux->file, offset, SEEK_SET);
+				if (offset == -1)
+					ULOG_ERRNO("fseeko", errno);
+				return -EIO;
+			}
+
+	ret = fwrite(sample->buffer, sample->len, 1, mux->file);
+			if (ret != 1) {
+				offset = fseeko(mux->file, offset, SEEK_SET);
+				if (offset == -1)
+					ULOG_ERRNO("fseeko", errno);
+				return -EIO;
+			}
+	
+	track->samples.count++;
+	track->chunks.count++;
+	if (sample->sync && track->type == MP4_TRACK_TYPE_VIDEO)
+		track->sync.count++;
+
+	return 0;
+}
+
 
 MP4_API void mp4_mux_dump(struct mp4_mux *mux)
 {
