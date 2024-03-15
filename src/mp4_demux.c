@@ -150,6 +150,22 @@ void mp4_set_reader_pos_lastframe(struct mp4_demux * demux, unsigned int track_i
 	tk->direction = direction;
 }
 
+void mp4_set_reader_pos_firstframe(struct mp4_demux * demux, unsigned int track_id, bool direction)
+{
+	struct mp4_file *mp4;
+	struct mp4_track *tk = NULL;
+	mp4 = &demux->mp4;
+
+	tk = mp4_track_find_by_id(mp4, track_id);
+	if (tk == NULL) {
+		ULOGE("track id=%d not found", track_id);
+		return -ENOENT;
+	}
+
+	tk->nextSample = 0;
+	tk->direction = direction;
+}
+
 
 int mp4_demux_open(const char *filename, struct mp4_demux **ret_obj)
 {

@@ -299,6 +299,11 @@ mp4_set_reader_pos_lastframe(struct mp4_demux *demux,
 					  bool direction);
 
 MP4_API void 
+mp4_set_reader_pos_firstframe(struct mp4_demux *demux,
+					  unsigned int track_id,
+					  bool direction);
+
+MP4_API void 
 mp4_demux_toggle_playback(struct mp4_demux *demux,
 				       unsigned int track_id);
 					   
