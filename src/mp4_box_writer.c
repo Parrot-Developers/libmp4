@@ -28,6 +28,27 @@
 #include "mp4_priv.h"
 
 
+#ifndef OFF_MAX
+#	define OFF_MAX                                                        \
+		(sizeof(off_t) == sizeof(long long) ? LLONG_MAX                \
+		 : sizeof(off_t) == sizeof(int)	    ? INT_MAX                  \
+						    : -999999)
+#endif
+
+
+#define ADD_OFF_T_CHECK_SIZE(_a, _b)                                           \
+	do {                                                                   \
+		if (_a == 0 || _b == 0)                                        \
+			_a += _b;                                              \
+		else if ((_a < 0 && _b > 0) || (_a > 0 && _b < 0))             \
+			_a += _b;                                              \
+		else if (_a < (off_t)OFF_MAX - _b)                             \
+			_a += _b;                                              \
+		else                                                           \
+			return -ERANGE;                                        \
+	} while (0)
+
+
 static off_t
 mp4_box_empty_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 {
@@ -46,13 +67,13 @@ mp4_box_empty_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(size);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(box->type);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, size, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, size, bytesWritten);
 
 	return bytesWritten;
 }
@@ -72,11 +93,11 @@ static off_t mp4_box_container_write(struct mp4_mux *mux,
 
 	/* Box size */
 	val32 = htonl(0);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(box->type);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Write all childrens */
 	list_walk_entry_forward(&box->children, child, node)
@@ -86,10 +107,10 @@ static off_t mp4_box_container_write(struct mp4_mux *mux,
 		ret = child->writer.func(mux, child, maxBytes - bytesWritten);
 		if (ret < 0)
 			return ret;
-		bytesWritten += ret;
+		ADD_OFF_T_CHECK_SIZE(bytesWritten, ret);
 	}
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, 0, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, 0, bytesWritten);
 
 	return bytesWritten;
 }
@@ -115,69 +136,69 @@ mp4_box_mvhd_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(box->type);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Version & Flags */
 	val32 = htonl(0x01000000);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'creation_time' */
 	val32 = htonl(args->creation_time >> 32);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 	val32 = htonl(args->creation_time & 0xffffffff);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'modification_time' */
 	val32 = htonl(args->modification_time >> 32);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 	val32 = htonl(args->modification_time & 0xffffffff);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'timescale' */
 	val32 = htonl(args->timescale);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'duration' */
 	val32 = htonl(args->duration >> 32);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 	val32 = htonl(args->duration & 0xffffffff);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'preferred_rate' */
 	val32 = htonl(0x00010000); /* Q16.16 */
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'preferred_volume' */
 	val16 = htons(0x0100); /* Q8.8 */
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* 10 bytes Reserved */
 	zeroes = 10;
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
 
 	/* Matrix */
 	val32 = htonl(0x00010000);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 	zeroes = 12;
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
 	val32 = htonl(0x40000000);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Pre defined */
 	zeroes = 24;
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
 
 	/* Next track id */
 	val32 = htonl(args->track_count + 1);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -206,70 +227,70 @@ mp4_box_tkhd_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(box->type);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'version' & 'flags' */
 	version_flags = track->flags & 0x7;
 	version_flags |= 0x01000000;
 	val32 = htonl(version_flags);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'creation_time' */
 	val32 = htonl(track->creation_time >> 32);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 	val32 = htonl(track->creation_time & 0xffffffff);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'modification_time' */
 	val32 = htonl(track->modification_time >> 32);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 	val32 = htonl(track->modification_time & 0xffffffff);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'track_ID' */
 	val32 = htonl(track->id);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Reserved */
 	zeroes = 4;
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
 
 	/* 'duration' */
 	val32 = htonl(track->duration_moov >> 32);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 	val32 = htonl(track->duration_moov & 0xffffffff);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Reserved */
 	zeroes = 8;
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
 
 	/* 'layer' & 'alternate_group' */
 	val32 = htonl(0);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'volume' */
 	volume = (track->type == MP4_TRACK_TYPE_AUDIO) ? 0x0100 : 0;
 	val16 = htons(volume);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* Reserved */
 	zeroes = 2;
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
 
 	/* Matrix */
 	val32 = htonl(0x00010000);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 	zeroes = 12;
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
 	val32 = htonl(0x40000000);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'width' & 'height' */
 	if (track->type == MP4_TRACK_TYPE_VIDEO) {
@@ -279,11 +300,11 @@ mp4_box_tkhd_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 		width = height = 0;
 	}
 	val32 = htonl(width);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 	val32 = htonl(height);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -307,23 +328,28 @@ static off_t mp4_box_tref_content_write(struct mp4_mux *mux,
 
 	track = box->writer.args;
 
-	boxSize = 8 + 4 * track->referenceTrackIdCount;
+	boxSize = 8 + 4 * track->referenceTrackHandleCount;
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(box->type);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'track_reference_id' */
-	for (i = 0; i < track->referenceTrackIdCount; i++) {
-		val32 = htonl(track->referenceTrackId[i]);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	for (i = 0; i < track->referenceTrackHandleCount; i++) {
+		/* Get reference track from its handle */
+		struct mp4_mux_track *ref_track = mp4_mux_track_find_by_handle(
+			mux, track->referenceTrackHandle[i]);
+		if (ref_track == NULL)
+			return -ENOENT;
+		val32 = htonl(ref_track->id);
+		MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 	}
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -347,43 +373,43 @@ mp4_box_mdhd_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(box->type);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'version' & 'flags' */
 	val32 = htonl(0x01000000);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'creation_time' */
 	val32 = htonl(track->creation_time >> 32);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 	val32 = htonl(track->creation_time & 0xffffffff);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'modification_time' */
 	val32 = htonl(track->modification_time >> 32);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 	val32 = htonl(track->modification_time & 0xffffffff);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'timescale' */
 	val32 = htonl(track->timescale);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'duration' */
 	val32 = htonl(track->duration >> 32);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 	val32 = htonl(track->duration & 0xffffffff);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'language' & 'quality' */
 	val32 = htonl(0);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -405,21 +431,21 @@ mp4_box_vmhd_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(box->type);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'version' & 'flags' */
 	val32 = htonl(1);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'graphicsmode' & 'opcolor' */
 	zeroes = 8;
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -440,21 +466,21 @@ mp4_box_smhd_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(box->type);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'version' & 'flags' */
 	val32 = htonl(0);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'balance' (0 = center) */
 	val32 = htonl(0);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -475,17 +501,112 @@ mp4_box_nmhd_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(box->type);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'version' & 'flags' */
 	val32 = htonl(0);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
+
+	return bytesWritten;
+}
+
+
+/**
+ * See:
+ * https://developer.apple.com/documentation/quicktime-file-format/base_media_info_atom
+ */
+static off_t
+mp4_box_gmin_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
+{
+	off_t bytesWritten = 0;
+	off_t boxSize = 0x18;
+	uint32_t val32;
+	uint16_t val16;
+	size_t zeroes;
+
+	if (mux == NULL || box == NULL)
+		return -EINVAL;
+
+	/* Box size */
+	val32 = htonl(boxSize);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
+
+	/* Box type */
+	val32 = htonl(MP4_GENERIC_MEDIA_INFO_BOX);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
+
+	/* 'version' & 'flags' */
+	val32 = htonl(0);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
+
+	/* Graphics mode (Dither the image (if needed), otherwise do a copy.) */
+	/* which simply indicate that the image should not blend with the image
+	 * behind it, but overwrite it. */
+	val16 = htons(0x40);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
+
+	/* opColor (transfer mode, red) */
+	val16 = htons(0x8000);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
+
+	/* opColor (transfer mode, green) */
+	val16 = htons(0x8000);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
+
+	/* opColor (transfer mode, blue) */
+	val16 = htons(0x8000);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
+
+	/* balance (sound) */
+	val16 = htons(0x0);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
+
+	/* Reserved */
+	zeroes = 2;
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
+
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
+
+	return bytesWritten;
+}
+
+
+/**
+ * ISO/IEC 14496-12 8.4.5.5
+ */
+static off_t
+mp4_box_gmhd_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
+{
+	off_t res;
+	off_t bytesWritten = 0;
+	off_t boxSize = 0; /* Box size can't be determined here */
+	uint32_t val32;
+
+	if (mux == NULL || box == NULL)
+		return -EINVAL;
+
+	/* Box size */
+	val32 = htonl(boxSize);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
+
+	/* Box type */
+	val32 = htonl(box->type);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
+
+	/* gmin */
+	res = mp4_box_gmin_write(mux, box, maxBytes - bytesWritten);
+	if (res < 0)
+		return res;
+
+	ADD_OFF_T_CHECK_SIZE(bytesWritten, res);
+
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -525,6 +646,10 @@ mp4_box_hdlr_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 		handler_type = MP4_HANDLER_TYPE_METADATA;
 		name = "TimedMetadata";
 		break;
+	case MP4_TRACK_TYPE_CHAPTERS:
+		handler_type = MP4_HANDLER_TYPE_TEXT;
+		name = "Chapters";
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -537,35 +662,35 @@ mp4_box_hdlr_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(box->type);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'version' & 'flags' */
 	val32 = htonl(0);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Pre defined */
 	zeroes = 4;
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
 
 	/* 'handler_type' */
 	val32 = htonl(handler_type);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Reserved */
 	zeroes = 12;
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
 
 	/* 'name' (including terminating NULL) */
 	for (size_t i = 0; i < namelen; i++) {
 		val8 = name[i];
-		MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+		MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 	}
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -586,33 +711,33 @@ mp4_box_dref_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(box->type);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'version' & 'flag' */
 	val32 = htonl(0);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* entry_count' */
 	val32 = htonl(1);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Dref 'size' */
 	val32 = htonl(12);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Dref 'type' */
 	val32 = htonl(MP4_DATA_REFERENCE_TYPE_URL);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Dref 'version' & 'flags' */
 	val32 = htonl(1);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -645,61 +770,61 @@ mp4_box_avcc_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(MP4_AVC_DECODER_CONFIG_BOX);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'version' */
 	val8 = 1;
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* 'AVCProfileIndication;' */
 	val8 = track->video.avc.sps[1];
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* 'profile_compatibility;' */
 	val8 = track->video.avc.sps[2];
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* 'AVCLevelIndication;' */
 	val8 = track->video.avc.sps[3];
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* Reserved | 'LengthSizeMinusOne' */
 	val8 = 0xfc | 0x03;
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* Reserved | 'numOfSequenceParameterSets' */
 	val8 = 0xe0 | 1;
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* 'sequenceParameterSetLength' */
 	val16 = htons(track->video.avc.sps_size);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* 'sequenceParameterSetNALUnit' */
 	for (size_t i = 0; i < track->video.avc.sps_size; i++) {
 		val8 = track->video.avc.sps[i];
-		MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+		MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 	}
 
 	/* 'numOfPictureParameterSets' */
 	val8 = 1;
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* 'pictureParameterSetLength' */
 	val16 = htons(track->video.avc.pps_size);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* 'pictureParameterSetNALUnit' */
 	for (size_t i = 0; i < track->video.avc.pps_size; i++) {
 		val8 = track->video.avc.pps[i];
-		MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+		MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 	}
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -735,137 +860,131 @@ mp4_box_hvcc_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(MP4_HEVC_DECODER_CONFIG_BOX);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'version' */
 	val8 = 1;
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* 'general_profile_space', 'general_tier_flag', 'general_profile_idc'
 	 */
 	val8 = (hvcc->general_profile_space << 6) |
 	       (hvcc->general_tier_flag << 5) | hvcc->general_profile_idc;
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* 'general_profile_compatibility_flags' */
 	val32 = htonl(hvcc->general_profile_compatibility_flags);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'general_constraints_indicator_flags' */
 	val32 = (uint32_t)((hvcc->general_constraints_indicator_flags >> 16) &
 			   0x00000000FFFFFFFF);
 	val32 = htonl(val32);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 	val16 = (uint32_t)(hvcc->general_constraints_indicator_flags &
 			   0x0000000000FFFF);
 	val16 = htons(val16);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* 'general_level_idc' */
-	MP4_WRITE_8(mux->fd, hvcc->general_level_idc, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, hvcc->general_level_idc, bytesWritten, maxBytes);
 
 	/* Reserved | 'min_spatial_segmentation_idc' */
 	val16 = htons(hvcc->min_spatial_segmentation_idc | 0xF000);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* Reserved | 'parallelismType' */
 	val8 = hvcc->parallelism_type | 0xFC;
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* Reserved | 'chromaFormat' */
 	val8 = hvcc->chroma_format | 0xFC;
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* Reserved | 'bitDepthLumaMinus8' */
 	val8 = (hvcc->bit_depth_luma - 8) | 0xF8;
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* Reserved | 'bitDepthChromaMinus8' */
 	val8 = (hvcc->bit_depth_chroma - 8) | 0xF8;
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* 'avgFrameRate' */
 	val16 = htons(hvcc->avg_framerate);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* 'constantFrameRate', 'numTemporalLayers', 'temporalIdNested'
 	   'lengthSize'	*/
 	val8 = hvcc->constant_framerate << 6 | hvcc->num_temporal_layers << 5 |
 	       hvcc->temporal_id_nested << 2 | (hvcc->length_size - 1);
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* 'numOfArrays' */
-	MP4_WRITE_8(mux->fd, nb_arrays, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, nb_arrays, bytesWritten, maxBytes);
 
 	/* Write VPS */
 	/* 'array_completeness' and 'NAL_unit_type' */
 	val8 = array_completeness << 7 | MP4_H265_NALU_TYPE_VPS;
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* 'numNalus' */
 	val16 = htons(1);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* 'nalUnitLength' */
 	val16 = htons(track->video.hevc.vps_size);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* write nalu data */
 	for (size_t k = 0; k < track->video.hevc.vps_size; k++) {
-		MP4_WRITE_8(mux->fd,
-			    track->video.hevc.vps[k],
-			    bytesWritten,
-			    maxBytes);
+		MP4_WRITE_8(
+			mux, track->video.hevc.vps[k], bytesWritten, maxBytes);
 	}
 
 	/* Write SPS */
 	/* 'array_completeness' and 'NAL_unit_type' */
 	val8 = array_completeness << 7 | MP4_H265_NALU_TYPE_SPS;
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* 'numNalus' */
 	val16 = htons(1);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* 'nalUnitLength' */
 	val16 = htons(track->video.hevc.sps_size);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* write nalu data */
 	for (size_t k = 0; k < track->video.hevc.sps_size; k++) {
-		MP4_WRITE_8(mux->fd,
-			    track->video.hevc.sps[k],
-			    bytesWritten,
-			    maxBytes);
+		MP4_WRITE_8(
+			mux, track->video.hevc.sps[k], bytesWritten, maxBytes);
 	}
 
 	/* Write PPS */
 	/* 'array_completeness' and 'NAL_unit_type' */
 	val8 = array_completeness << 7 | MP4_H265_NALU_TYPE_PPS;
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* 'numNalus' */
 	val16 = htons(1);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* 'nalUnitLength' */
 	val16 = htons(track->video.hevc.pps_size);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* write nalu data */
 	for (size_t k = 0; k < track->video.hevc.pps_size; k++) {
-		MP4_WRITE_8(mux->fd,
-			    track->video.hevc.pps[k],
-			    bytesWritten,
-			    maxBytes);
+		MP4_WRITE_8(
+			mux, track->video.hevc.pps[k], bytesWritten, maxBytes);
 	}
 
 	/* update the box size with real size */
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -927,37 +1046,37 @@ mp4_box_esds_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(MP4_AUDIO_DECODER_CONFIG_BOX);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'version' */
 	val32 = 0;
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* ES Decriptor 'tag' */
 	val8 = 0x03;
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* ES Descriptor 'size' */
 	switch (esd_size_len) {
 	case 4:
 		val8 = (esd_size >> 21 & 0x7f) | 0x80;
-		MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+		MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 		/* FALLTHROUGH */
 	case 3:
 		val8 = (esd_size >> 14 & 0x7f) | 0x80;
-		MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+		MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 		/* FALLTHROUGH */
 	case 2:
 		val8 = (esd_size >> 7 & 0x7f) | 0x80;
-		MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+		MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 		/* FALLTHROUGH */
 	case 1:
 		val8 = esd_size & 0x7f;
-		MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+		MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 		break;
 	default:
 		return -EINVAL;
@@ -965,7 +1084,7 @@ mp4_box_esds_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* ES 'ID' */
 	val16 = htons(track->id);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* Flags:
 	 * (7)    streamDependenceFlag
@@ -973,32 +1092,32 @@ mp4_box_esds_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 	 * (5)    OCRStreamFlag
 	 * (4..0) streamPriority */
 	val8 = 0;
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* As flags are forced to 0, we don't need to handle 'dependsOn_ES_ID',
 	 * 'URLlength', 'URLstring' or 'OCR_ES_Id' fields */
 
 	/* Decoder Config Descriptor (DCD) 'tag' */
 	val8 = 0x04;
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* DCD 'size' */
 	switch (dcd_size_len) {
 	case 4:
 		val8 = (dcd_size >> 21 & 0x7f) | 0x80;
-		MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+		MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 		/* FALLTHROUGH */
 	case 3:
 		val8 = (dcd_size >> 14 & 0x7f) | 0x80;
-		MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+		MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 		/* FALLTHROUGH */
 	case 2:
 		val8 = (dcd_size >> 7 & 0x7f) | 0x80;
-		MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+		MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 		/* FALLTHROUGH */
 	case 1:
 		val8 = dcd_size & 0x7f;
-		MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+		MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 		break;
 	default:
 		return -EINVAL;
@@ -1006,37 +1125,37 @@ mp4_box_esds_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* DCD 'ObjecttypeIndication' */
 	val8 = 0x40; /* Audio ISO/IEC 14496-3 */
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* 'StreamType' (6bits) + 'upStream' (1bit) + Reserved (1bit) */
 	val8 = 0x15; /* 0x05 [Audio] << 2 | 0 << 1 | 0 << 0 */
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* 'bufferSizeDB', 'maxBitrate' & 'avgBitrate' can be set as zero */
 	zeroes = 11;
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
 
 	/* Decoder Specific Info (DSI) 'tag' */
 	val8 = 0x05;
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* DSI size */
 	switch (dsi_size_len) {
 	case 4:
 		val8 = (dsi_size >> 21 & 0x7f) | 0x80;
-		MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+		MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 		/* FALLTHROUGH */
 	case 3:
 		val8 = (dsi_size >> 14 & 0x7f) | 0x80;
-		MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+		MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 		/* FALLTHROUGH */
 	case 2:
 		val8 = (dsi_size >> 7 & 0x7f) | 0x80;
-		MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+		MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 		/* FALLTHROUGH */
 	case 1:
 		val8 = dsi_size & 0x7f;
-		MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+		MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 		break;
 	default:
 		return -EINVAL;
@@ -1045,22 +1164,22 @@ mp4_box_esds_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 	/* DSI data */
 	for (uint32_t i = 0; i < track->audio.specific_config_size; i++) {
 		val8 = track->audio.specific_config[i];
-		MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+		MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 	}
 
 	/* SL Packet header 'tag' */
 	val8 = 0x06;
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* SL Packet header 'size' */
 	val8 = 1;
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* SL Packet 'header': predefined */
 	val8 = 2; /* Reserved for use in MP4 files */
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -1093,17 +1212,17 @@ static off_t mp4_video_decoder_config_write(struct mp4_mux *mux,
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	switch (codec) {
 	case MP4_VIDEO_CODEC_AVC:
 		val32 = htonl(MP4_AVC1);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 		break;
 	case MP4_VIDEO_CODEC_HEVC:
 		val32 = htonl(MP4_HVC1);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 		break;
 	default:
 		ULOGE("unexpected video codec");
@@ -1112,46 +1231,46 @@ static off_t mp4_video_decoder_config_write(struct mp4_mux *mux,
 
 	/* Reserved */
 	zeroes = 6;
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
 
 	/* Data reference index */
 	val16 = htons(1);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* Pre defined & reserved */
 	zeroes = 16;
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
 
 	/* 'width' & 'height' */
 	val16 = htons(track->video.width);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 	val16 = htons(track->video.height);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* 'horizresolution' & 'vertresolution' */
 	val32 = htonl(0x00480000);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Reserved */
 	zeroes = 4;
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
 
 	/* 'frame_count' */
 	val16 = htons(1);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* 'Compressorname' */
 	zeroes = 32;
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
 
 	/* 'depth' */
 	val16 = htons(0x0018);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* Pre defined */
 	val16 = htons(0xffff);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* Box type */
 	if (codec == MP4_VIDEO_CODEC_AVC) {
@@ -1166,9 +1285,9 @@ static off_t mp4_video_decoder_config_write(struct mp4_mux *mux,
 			return res;
 	}
 
-	bytesWritten += res;
+	ADD_OFF_T_CHECK_SIZE(bytesWritten, res);
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -1196,47 +1315,47 @@ mp4_box_mp4a_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(MP4_MP4A);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Reserved */
 	zeroes = 6;
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
 
 	/* Data reference index */
 	val16 = htons(1);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* Reserved */
 	zeroes = 8;
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
 
 	/* 'channelcount' */
 	val16 = htons(2);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* 'samplesize' */
 	val16 = htons(16);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* Pre-defined & reserved */
 	zeroes = 4;
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
 
 	/* 'samplerate' */
 	val32 = htonl(track->audio.sample_rate);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* esds */
 	res = mp4_box_esds_write(mux, box, maxBytes - bytesWritten);
 	if (res < 0)
 		return res;
-	bytesWritten += res;
+	ADD_OFF_T_CHECK_SIZE(bytesWritten, res);
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -1274,37 +1393,134 @@ mp4_box_mett_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(MP4_TEXT_METADATA_SAMPLE_ENTRY);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Reserved */
 	zeroes = 6;
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
 
 	/* Data reference index */
 	val16 = htons(1);
-	MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 	/* 'content_encoding' */
 	for (size_t i = 0; i < encoding_len; i++) {
 		val8 = track->metadata.content_encoding[i];
-		MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+		MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 	}
 	val8 = 0;
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
 	/* 'mime_format' */
 	for (size_t i = 0; i < mime_len; i++) {
 		val8 = track->metadata.mime_type[i];
-		MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+		MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 	}
 	val8 = 0;
-	MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+	MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
+
+	return bytesWritten;
+}
+
+
+/**
+ * See:
+ * https://developer.apple.com/documentation/quicktime-file-format/text_sample_description/
+ */
+static off_t
+mp4_box_text_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
+{
+	off_t bytesWritten = 0;
+	off_t boxSize = 59;
+	uint16_t val16;
+	uint32_t val32;
+	uint16_t bg_color[3] = {0x0000, 0x0000, 0x0000}; /* R, G, B */
+	uint16_t fg_color[3] = {0xFFFF, 0xFFFF, 0xFFFF};
+	size_t zeroes;
+
+	if (mux == NULL || box == NULL)
+		return -EINVAL;
+
+	/* Box size */
+	val32 = htonl(boxSize);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
+
+	/* Box type */
+	val32 = htonl(MP4_TEXT_SAMPLE_ENTRY);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
+
+	/* Reserved */
+	zeroes = 6;
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
+
+	/* Data reference index */
+	val16 = htons(1);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
+
+	/* Display flags */
+	val32 = htonl(0x01);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
+
+	/* Text justification */
+	/* Set this field to 0 for left-justified text, to 1 for centered text,
+	 * and to –1 for right-justified text. */
+	val32 = htonl(0x00);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
+
+	/* Background color: A 48-bit RGB color that specifies the text’s
+	 * background color */
+	for (size_t i = 0; i < ARRAY_SIZE(bg_color); i++) {
+		val16 = htons(bg_color[i]);
+		MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
+	}
+
+	/* Default text box: a 64-bit rectangle that specifies an area to
+	 * receive text (top, left, bottom, right) */
+	val16 = htons(0x00);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
+
+	/* Reserved */
+	zeroes = 8;
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
+
+	/* Font number: this must be set to 0. */
+	val16 = htons(0x00);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
+
+	/* Font face: set this field to 0 for normal text */
+	val16 = htons(0x00);
+	MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
+
+	/* Reserved */
+	zeroes = 1;
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
+
+	/* Reserved */
+	/* Note: specs say 16-bits, but mediainfo and samples both say 8-bits */
+	zeroes = 1;
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
+
+	/* Foreground color: a 48-bit RGB color that specifies the text’s
+	 * foreground color */
+	for (size_t i = 0; i < ARRAY_SIZE(fg_color); i++) {
+		val16 = htons(fg_color[i]);
+		MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
+	}
+
+	/* Font name: unset */
+	zeroes = 1;
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
+
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -1329,19 +1545,19 @@ mp4_box_stsd_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(box->type);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'version' & 'flags' */
 	val32 = htonl(0);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'entry_count' */
 	val32 = htonl(1);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	switch (track->type) {
 	case MP4_TRACK_TYPE_VIDEO:
@@ -1349,25 +1565,31 @@ mp4_box_stsd_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 			mux, box, maxBytes - bytesWritten, track->video.codec);
 		if (res < 0)
 			return res;
-		bytesWritten += res;
+		ADD_OFF_T_CHECK_SIZE(bytesWritten, res);
 		break;
 	case MP4_TRACK_TYPE_AUDIO:
 		res = mp4_box_mp4a_write(mux, box, maxBytes - bytesWritten);
 		if (res < 0)
 			return res;
-		bytesWritten += res;
+		ADD_OFF_T_CHECK_SIZE(bytesWritten, res);
 		break;
 	case MP4_TRACK_TYPE_METADATA:
 		res = mp4_box_mett_write(mux, box, maxBytes - bytesWritten);
 		if (res < 0)
 			return res;
-		bytesWritten += res;
+		ADD_OFF_T_CHECK_SIZE(bytesWritten, res);
+		break;
+	case MP4_TRACK_TYPE_CHAPTERS:
+		res = mp4_box_text_write(mux, box, maxBytes - bytesWritten);
+		if (res < 0)
+			return res;
+		ADD_OFF_T_CHECK_SIZE(bytesWritten, res);
 		break;
 	default:
 		return -EINVAL;
 	}
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -1396,19 +1618,19 @@ mp4_box_stts_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(box->type);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'version' & 'flags' */
 	val32 = htonl(0);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'entry_count' */
 	val32 = htonl(track->time_to_sample.count);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	for (uint32_t i = 0; i < track->time_to_sample.count; i++) {
 		struct mp4_time_to_sample_entry *entry;
@@ -1416,14 +1638,14 @@ mp4_box_stts_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 		/* 'sample_count' */
 		val32 = htonl(entry->sampleCount);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 		/* 'sample_delta' */
 		val32 = htonl(entry->sampleDelta);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 	}
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -1453,27 +1675,27 @@ mp4_box_stss_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(box->type);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'version' & 'flags' */
 	val32 = htonl(0);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'entry_count' */
 	val32 = htonl(track->sync.count);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	for (uint32_t i = 0; i < track->sync.count; i++) {
 		/* 'sample_number' */
 		val32 = htonl(track->sync.entries[i]);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 	}
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -1503,31 +1725,31 @@ mp4_box_stsz_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(box->type);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'version' & 'flags' */
 	val32 = htonl(0);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'sample_size' */
 	val32 = htonl(0);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'sample_count */
 	val32 = htonl(track->samples.count);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	for (uint32_t i = 0; i < track->samples.count; i++) {
 		/* 'entry_size' */
 		val32 = htonl(track->samples.sizes[i]);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 	}
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -1557,19 +1779,19 @@ mp4_box_stsc_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(box->type);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'version' & 'flags' */
 	val32 = htonl(0);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'entry_count' */
 	val32 = htonl(track->sample_to_chunk.count);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	for (uint32_t i = 0; i < track->sample_to_chunk.count; i++) {
 		struct mp4_sample_to_chunk_entry *entry;
@@ -1577,18 +1799,18 @@ mp4_box_stsc_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 		/* 'first_chunk' */
 		val32 = htonl(entry->firstChunk);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 		/* 'samples_per_chunk' */
 		val32 = htonl(entry->samplesPerChunk);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 		/* 'sample_description_id' */
 		val32 = htonl(entry->sampleDescriptionIndex);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 	}
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -1618,27 +1840,27 @@ mp4_box_stco_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(box->type);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'version' & 'flags' */
 	val32 = htonl(0);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'entry_count' */
 	val32 = htonl(track->chunks.count);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	for (uint32_t i = 0; i < track->chunks.count; i++) {
 		/* 'chunk_offset' (32bits) */
 		val32 = htonl(track->chunks.offsets[i]);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 	}
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -1668,30 +1890,30 @@ mp4_box_co64_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(box->type);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'version' & 'flags' */
 	val32 = htonl(0);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'entry_count' */
 	val32 = htonl(track->chunks.count);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	for (uint32_t i = 0; i < track->chunks.count; i++) {
 		uint64_t offset = track->chunks.offsets[i];
 		/* 'chunk_offset' */
 		val32 = htonl(offset >> 32);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 		val32 = htonl(offset & 0xffffffff);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 	}
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -1719,15 +1941,15 @@ mp4_box_keys_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(MP4_KEYS_BOX);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'version' & 'flags' */
 	val32 = htonl(0);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'entry_count' */
 	list_walk_entry_forward(meta_info->metadatas, meta, node)
@@ -1737,7 +1959,7 @@ mp4_box_keys_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 		count++;
 	}
 	val32 = htonl(count);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'entries' */
 	list_walk_entry_forward(meta_info->metadatas, meta, node)
@@ -1749,20 +1971,20 @@ mp4_box_keys_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 		/* 'Key_size' */
 		len = strlen(meta->key);
 		val32 = htonl(len + 8);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 		/* 'Key_namespace' */
 		val32 = htonl(MP4_METADATA_NAMESPACE_MDTA);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 		/* 'Key_value' */
 		for (size_t i = 0; i < len; i++) {
 			uint8_t val8 = meta->key[i];
-			MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+			MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 		}
 	}
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -1788,7 +2010,7 @@ static off_t mp4_box_write_meta_raw_entry(struct mp4_mux *mux,
 
 	/* Entry box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Entry box key:
 	 * index for MP4_MUX_META_META, key for others */
@@ -1796,41 +2018,41 @@ static off_t mp4_box_write_meta_raw_entry(struct mp4_mux *mux,
 		val32 = htonl(index);
 	else
 		memcpy(&val32, key, sizeof(uint32_t));
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	if (storage != MP4_MUX_META_UDTA_ROOT) {
 		/* Entry data sub-box 'size' */
 		val32 = htonl(boxSize - bytesWritten);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 		/* Entry data sub-box 'type' */
 		val32 = htonl(MP4_DATA_BOX);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 		/* Entry data sub-box data type */
 		val32 = htonl(type);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 		/* Entry data sub-box locale */
 		val32 = htonl(0);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 	} else {
 		/* meta->value length */
 		val16 = htons(len);
-		MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+		MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 
 		/* language code */
 		val16 = htons(0x55c4);
-		MP4_WRITE_16(mux->fd, val16, bytesWritten, maxBytes);
+		MP4_WRITE_16(mux, val16, bytesWritten, maxBytes);
 	}
 
 	/* Entry data sub-box contents */
 	for (size_t i = 0; i < len; i++) {
 		uint8_t val8 = data[i];
-		MP4_WRITE_8(mux->fd, val8, bytesWritten, maxBytes);
+		MP4_WRITE_8(mux, val8, bytesWritten, maxBytes);
 	}
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -1893,11 +2115,11 @@ static off_t mp4_box_ilst_write(struct mp4_mux *mux,
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(MP4_ILST_BOX);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	list_walk_entry_forward(meta_info->metadatas, meta, node)
 	{
@@ -1912,11 +2134,12 @@ static off_t mp4_box_ilst_write(struct mp4_mux *mux,
 			mux, meta, storage, index, maxBytes - bytesWritten);
 		if (res < 0)
 			return res;
-		bytesWritten += res;
+		ADD_OFF_T_CHECK_SIZE(bytesWritten, res);
 	}
 
 	/* Write cover if needed */
 	if (meta_info->cover_type != MP4_METADATA_COVER_TYPE_UNKNOWN &&
+	    meta_info->cover != NULL && meta_info->cover_size > 0 &&
 	    storage == MP4_MUX_META_UDTA) {
 		off_t res;
 		int type = 0;
@@ -1943,10 +2166,10 @@ static off_t mp4_box_ilst_write(struct mp4_mux *mux,
 						   maxBytes - bytesWritten);
 		if (res < 0)
 			return res;
-		bytesWritten += res;
+		ADD_OFF_T_CHECK_SIZE(bytesWritten, res);
 	}
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -1970,52 +2193,52 @@ static off_t mp4_box_meta_udta_write(struct mp4_mux *mux,
 
 	/* Box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Box type */
 	val32 = htonl(box->type);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* 'version' & 'flags' */
 	val32 = htonl(0);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Handler sub-box 'size', always 33 bytes */
 	val32 = htonl(33);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Handler sub-box 'type' */
 	val32 = htonl(MP4_HANDLER_REFERENCE_BOX);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Handler sub-box 'version' & 'flags' */
 	val32 = htonl(0);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Handler sub-box 'predefined' */
 	val32 = htonl(MP4_MHLR);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Handler sub-box handler 'type' */
 	val32 = htonl(MP4_METADATA_HANDLER_TYPE_MDIR);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Handler sub-box reserved */
 	val32 = htonl(MP4_METADATA_HANDLER_TYPE_APPL);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Handler sub-box Reserved & 'name' */
 	zeroes = 9;
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
 
 	/* Ilst sub-box */
 	res = mp4_box_ilst_write(
 		mux, box, maxBytes - bytesWritten, MP4_MUX_META_UDTA);
 	if (res < 0)
 		return res;
-	bytesWritten += res;
+	ADD_OFF_T_CHECK_SIZE(bytesWritten, res);
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -2040,50 +2263,50 @@ mp4_box_meta_write(struct mp4_mux *mux, struct mp4_box *box, size_t maxBytes)
 
 	/* box size */
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* box type */
 	val32 = htonl(box->type);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Handler sub-box size */
 	val32 = htonl(33); /* Always 33 bytes */
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Handler sub-box 'type' */
 	val32 = htonl(MP4_HANDLER_REFERENCE_BOX);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Handler sub-box 'version' & 'flags' */
 	val32 = htonl(0);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Handler sub-box predefined */
 	val32 = htonl(0);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Handler sub-box handler 'type' */
 	val32 = htonl(MP4_METADATA_NAMESPACE_MDTA);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32(mux, val32, bytesWritten, maxBytes);
 
 	/* Handler sub-box Reserved &'name' */
 	zeroes = 13;
-	MP4_WRITE_ZEROES(mux->fd, zeroes, bytesWritten, maxBytes);
+	MP4_WRITE_ZEROES(mux, zeroes, bytesWritten, maxBytes);
 
 	/* Keys sub-box */
 	res = mp4_box_keys_write(mux, box, maxBytes - bytesWritten);
 	if (res < 0)
 		return res;
-	bytesWritten += res;
+	ADD_OFF_T_CHECK_SIZE(bytesWritten, res);
 
 	/* Ilst sub-box */
 	res = mp4_box_ilst_write(
 		mux, box, maxBytes - bytesWritten, MP4_MUX_META_META);
 	if (res < 0)
 		return res;
-	bytesWritten += res;
+	ADD_OFF_T_CHECK_SIZE(bytesWritten, res);
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -2135,6 +2358,20 @@ struct mp4_box *mp4_box_new_cdsc(struct mp4_box *parent,
 	if (box == NULL)
 		return box;
 	box->type = MP4_REFERENCE_TYPE_DESCRIPTION;
+	box->writer.func = mp4_box_tref_content_write;
+	box->writer.args = track;
+	box->writer.need_free = 0;
+	return box;
+}
+
+
+struct mp4_box *mp4_box_new_chap(struct mp4_box *parent,
+				 struct mp4_mux_track *track)
+{
+	struct mp4_box *box = mp4_box_new(parent);
+	if (box == NULL)
+		return box;
+	box->type = MP4_REFERENCE_TYPE_CHAPTERS;
 	box->writer.func = mp4_box_tref_content_write;
 	box->writer.args = track;
 	box->writer.need_free = 0;
@@ -2206,6 +2443,20 @@ struct mp4_box *mp4_box_new_nmhd(struct mp4_box *parent,
 		return box;
 	box->type = MP4_NULL_MEDIA_HEADER_BOX;
 	box->writer.func = mp4_box_nmhd_write;
+	box->writer.args = track;
+	box->writer.need_free = 0;
+	return box;
+}
+
+
+struct mp4_box *mp4_box_new_gmhd(struct mp4_box *parent,
+				 struct mp4_mux_track *track)
+{
+	struct mp4_box *box = mp4_box_new(parent);
+	if (box == NULL)
+		return box;
+	box->type = MP4_GENERIC_MEDIA_HEADER_BOX;
+	box->writer.func = mp4_box_gmhd_write;
 	box->writer.args = track;
 	box->writer.need_free = 0;
 	return box;
@@ -2365,45 +2616,49 @@ struct mp4_box *mp4_box_new_udta_entry(struct mp4_box *parent,
 /**
  * ISO/IEC 14496-12 4.3
  */
+/* Write directly in the file, not in a buffer */
 off_t mp4_box_ftyp_write(struct mp4_mux *mux)
 {
 	off_t bytesWritten = 0;
 	uint32_t val32;
-	size_t maxBytes = mux->data_offset - lseek(mux->fd, 0, SEEK_CUR);
+	size_t maxBytes = mux->data_offset - mux->tables.offset;
 
 	/* Box size */
 	off_t boxSize = 8 * sizeof(uint32_t);
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32_INTERNAL(mux, val32, bytesWritten, maxBytes, "box size");
 
 	/* Box name */
 	val32 = htonl(MP4_FILE_TYPE_BOX);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32_INTERNAL(mux, val32, bytesWritten, maxBytes, "box name");
 
 	/* 'major_brand' */
 	val32 = htonl(MP4_ISOM);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32_INTERNAL(
+		mux, val32, bytesWritten, maxBytes, "major brand");
 
 	/* 'minor_version' */
 	val32 = htonl(2);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32_INTERNAL(
+		mux, val32, bytesWritten, maxBytes, "minor version");
 
 	/* 'compatible_brands[]' */
 	val32 = htonl(MP4_ISOM);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32_INTERNAL(mux, val32, bytesWritten, maxBytes, "ISOM");
 	val32 = htonl(MP4_ISO2);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32_INTERNAL(mux, val32, bytesWritten, maxBytes, "ISO2");
 	val32 = htonl(MP4_MP41);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32_INTERNAL(mux, val32, bytesWritten, maxBytes, "MP41");
 	val32 = htonl(MP4_AVC1);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32_INTERNAL(mux, val32, bytesWritten, maxBytes, "AVC1");
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
 
 
+/* Write directly in the file, not in a buffer */
 static off_t
 mp4_box_free_write_internal(struct mp4_mux *mux, size_t len, size_t maxBytes)
 {
@@ -2416,16 +2671,17 @@ mp4_box_free_write_internal(struct mp4_mux *mux, size_t len, size_t maxBytes)
 	/* Box size */
 	off_t boxSize = len;
 	val32 = htonl(boxSize);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32_INTERNAL(mux, val32, bytesWritten, maxBytes, "box size");
 
 	/* Box name */
 	val32 = htonl(MP4_FREE_BOX);
-	MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+	MP4_WRITE_32_INTERNAL(mux, val32, bytesWritten, maxBytes, "box name");
 
 	/* Skip rest */
-	MP4_WRITE_SKIP(mux->fd, len - bytesWritten, bytesWritten, maxBytes);
+	MP4_WRITE_SKIP_INTERNAL(
+		mux, len - bytesWritten, bytesWritten, maxBytes);
 
-	MP4_WRITE_CHECK_SIZE(mux->fd, boxSize, bytesWritten);
+	MP4_WRITE_CHECK_SIZE(mux, boxSize, bytesWritten);
 
 	return bytesWritten;
 }
@@ -2434,9 +2690,10 @@ mp4_box_free_write_internal(struct mp4_mux *mux, size_t len, size_t maxBytes)
 /**
  * ISO/IEC 14496-12 8.1.2
  */
+/* Write directly in the file, not in a buffer */
 off_t mp4_box_free_write(struct mp4_mux *mux, size_t len)
 {
-	size_t maxBytes = mux->data_offset - lseek(mux->fd, 0, SEEK_CUR);
+	size_t maxBytes = mux->data_offset - mux->tables.offset;
 
 	return mp4_box_free_write_internal(mux, len, maxBytes);
 }
@@ -2445,42 +2702,59 @@ off_t mp4_box_free_write(struct mp4_mux *mux, size_t len)
 /**
  * ISO/IEC 14496-12 8.1.1
  */
+/* Write directly in the file, not in a buffer */
 off_t mp4_box_mdat_write(struct mp4_mux *mux, uint64_t size)
 {
 	off_t bytesWritten = 0;
 	uint32_t val32;
-
-	size_t maxBytes = 16;
+	size_t maxBytes = UINT32_MAX;
 
 	if (size <= UINT32_MAX) {
 		/* Reserve for wide size if required */
-		bytesWritten = mp4_box_free_write_internal(mux, 8, maxBytes);
-		if (bytesWritten < 0)
-			return bytesWritten;
+		val32 = htonl(8);
+		MP4_WRITE_32_INTERNAL(
+			mux, val32, bytesWritten, maxBytes, "reserved bytes");
+
+		val32 = htonl(MP4_FREE_BOX);
+		MP4_WRITE_32_INTERNAL(
+			mux, val32, bytesWritten, maxBytes, "free box name");
 
 		/* Box size */
 		val32 = htonl(size);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32_INTERNAL(
+			mux, val32, bytesWritten, maxBytes, "mdat box size");
 
 		/* Box name */
 		val32 = htonl(MP4_MDAT_BOX);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32_INTERNAL(
+			mux, val32, bytesWritten, maxBytes, "mdat box name");
 	} else {
 		/* 8 more bytes as we use the free */
 		size += 8;
 		/* Wide size */
 		val32 = htonl(1);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32_INTERNAL(
+			mux, val32, bytesWritten, maxBytes, "mdat wide size");
 
 		/* Box name */
 		val32 = htonl(MP4_MDAT_BOX);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32_INTERNAL(
+			mux, val32, bytesWritten, maxBytes, "mdat box name");
 
 		/* 64 bits size */
 		val32 = htonl(size >> 32);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32_INTERNAL(mux,
+				      val32,
+				      bytesWritten,
+				      maxBytes,
+				      "mdat box size pt1");
+
 		val32 = htonl(size & UINT32_MAX);
-		MP4_WRITE_32(mux->fd, val32, bytesWritten, maxBytes);
+		MP4_WRITE_32_INTERNAL(mux,
+				      val32,
+				      bytesWritten,
+				      maxBytes,
+				      "mdat box size pt2");
 	}
 
 	return bytesWritten;

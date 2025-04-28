@@ -36,6 +36,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -54,6 +55,11 @@
 
 #include <futils/futils.h>
 #include <libmp4.h>
+
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof(*(x)))
+
+/* Note: MAX_ALLOC_SIZE must be large enough to hold thumbnail */
+#define MAX_ALLOC_SIZE (10 * 1000 * 1000)
 
 
 /* clang-format off */
@@ -83,6 +89,8 @@
 #define MP4_SOUND_MEDIA_HEADER_BOX          0x736d6864 /* "smhd" */
 #define MP4_HINT_MEDIA_HEADER_BOX           0x686d6864 /* "hmhd" */
 #define MP4_NULL_MEDIA_HEADER_BOX           0x6e6d6864 /* "nmhd" */
+#define MP4_GENERIC_MEDIA_HEADER_BOX        0x676d6864 /* "gmhd" */
+#define MP4_GENERIC_MEDIA_INFO_BOX          0x676d696e /* "gmin" */
 #define MP4_DATA_INFORMATION_BOX            0x64696e66 /* "dinf" */
 #define MP4_DATA_REFERENCE_BOX              0x64726566 /* "dref" */
 #define MP4_SAMPLE_TABLE_BOX                0x7374626c /* "stbl" */
@@ -101,6 +109,8 @@
 #define MP4_ILST_BOX                        0x696c7374 /* "ilst" */
 #define MP4_DATA_BOX                        0x64617461 /* "data" */
 #define MP4_LOCATION_BOX                    0xa978797a /* ".xyz" */
+#define MP4_EDTS_BOX                        0x65647473 /* "edts" */
+#define MP4_ELST                            0x656c7374 /* "elst" */
 
 #define MP4_HANDLER_TYPE_VIDEO              0x76696465 /* "vide" */
 #define MP4_HANDLER_TYPE_AUDIO              0x736f756e /* "soun" */
@@ -117,6 +127,7 @@
 
 #define MP4_XML_METADATA_SAMPLE_ENTRY       0x6d657478 /* "metx" */
 #define MP4_TEXT_METADATA_SAMPLE_ENTRY      0x6d657474 /* "mett" */
+#define MP4_TEXT_SAMPLE_ENTRY               0x74657874 /* "text" */
 
 #define MP4_METADATA_NAMESPACE_MDTA         0x6d647461 /* "mdta" */
 #define MP4_METADATA_HANDLER_TYPE_MDIR      0x6d646972 /* "mdir" */
@@ -162,6 +173,7 @@ enum mp4_h265_nalu_type {
 
 enum mp4_time_cmp {
 	MP4_TIME_CMP_EXACT, /* Exact match */
+	MP4_TIME_CMP_NEAREST, /* Nearest sample */
 	MP4_TIME_CMP_LT, /* Less than */
 	MP4_TIME_CMP_GT, /* Greater than */
 	MP4_TIME_CMP_LT_EQ, /* Less than or equal */
@@ -323,11 +335,15 @@ struct mp4_mux_metadata_info {
 
 /* track structure used by muxer */
 struct mp4_mux_track {
+	/* Opaque handle used to identify the track. */
+	uint32_t handle;
+	/* Unset: track IDs are computed when writing to the MP4 file to ensure
+	 * that enabled tracks have lowest IDs. */
 	uint32_t id;
 	char *name;
 	uint32_t flags;
-	uint32_t referenceTrackId[MP4_TRACK_REF_MAX];
-	size_t referenceTrackIdCount;
+	uint32_t referenceTrackHandle[MP4_TRACK_REF_MAX];
+	size_t referenceTrackHandleCount;
 	uint32_t ref;
 	int has_ref;
 	enum mp4_track_type type;
@@ -363,6 +379,15 @@ struct mp4_mux_track {
 		uint32_t capacity;
 		uint32_t *entries;
 	} sync;
+	struct {
+		uint32_t samples;
+		uint32_t chunks;
+		uint32_t time_to_sample;
+		uint32_t sample_to_chunk;
+		uint32_t sync;
+	} stbl_index_write_count;
+	bool track_info_written;
+	uint32_t meta_write_count;
 
 	union {
 		struct mp4_video_decoder_config video;
@@ -396,6 +421,18 @@ struct mp4_mux_metadata {
 
 struct mp4_mux {
 	int fd;
+	char *filename;
+	struct {
+		char *link_file;
+		int fd_link;
+		char *tables_file;
+		char *tmp_tables_file;
+		int fd_tables;
+		bool failed_in_close;
+		bool enabled;
+		uint32_t meta_write_count;
+		bool thumb_written;
+	} recovery;
 	uint64_t duration;
 	uint64_t creation_time;
 	uint64_t modification_time;
@@ -408,11 +445,22 @@ struct mp4_mux {
 	/* Metadata */
 	struct list_node metadatas;
 	struct mp4_mux_metadata_info file_metadata;
+	bool max_tables_size_reached;
+	struct {
+		uint8_t *buf;
+		off_t offset;
+		off_t buf_size;
+	} tables;
 };
+
+
+#define OFF_T_TO_ERRNO(_off, default_errno)                                    \
+	((_off >= INT_MIN) ? (int)_off : -default_errno)
 
 
 #define MP4_READ_32(_file, _val32, _readBytes)                                 \
 	do {                                                                   \
+		_val32 = 0;                                                    \
 		ssize_t _count = read(_file, &_val32, sizeof(uint32_t));       \
 		if (_count == -1) {                                            \
 			ULOG_ERRNO("read", errno);                             \
@@ -430,6 +478,7 @@ struct mp4_mux {
 
 #define MP4_READ_16(_file, _val16, _readBytes)                                 \
 	do {                                                                   \
+		_val16 = 0;                                                    \
 		ssize_t _count = read(_file, &_val16, sizeof(uint16_t));       \
 		if (_count == -1) {                                            \
 			ULOG_ERRNO("read", errno);                             \
@@ -447,6 +496,7 @@ struct mp4_mux {
 
 #define MP4_READ_8(_file, _val8, _readBytes)                                   \
 	do {                                                                   \
+		_val8 = 0;                                                     \
 		ssize_t _count = read(_file, &_val8, sizeof(uint8_t));         \
 		if (_count == -1) {                                            \
 			ULOG_ERRNO("read", errno);                             \
@@ -476,69 +526,93 @@ struct mp4_mux {
 	} while (0)
 
 
-#define MP4_WRITE_32(_file, _val32, _writeBytes, _maxBytes)                    \
+#define MP4_WRITE_32(_mux, _val32, _writeBytes, _maxBytes)                     \
 	do {                                                                   \
 		if (_writeBytes + sizeof(uint32_t) > _maxBytes)                \
 			return -ENOSPC;                                        \
-		ssize_t _count = write(_file, &_val32, sizeof(uint32_t));      \
-		if (_count == -1) {                                            \
-			ULOG_ERRNO("write", errno);                            \
-			return -errno;                                         \
-		} else if ((size_t)_count != sizeof(uint32_t)) {               \
-			ULOG_ERRNO("only %zd bytes written instead of %zu",    \
-				   EIO,                                        \
-				   _count,                                     \
-				   sizeof(uint32_t));                          \
-			return -EIO;                                           \
+		void *_dst = memcpy(_mux->tables.buf + _mux->tables.offset,    \
+				    &_val32,                                   \
+				    sizeof(uint32_t));                         \
+		if (_dst == NULL) {                                            \
+			int _ret = -errno;                                     \
+			ULOG_ERRNO("memcpy", -_ret);                           \
+			return _ret;                                           \
+		}                                                              \
+		_mux->tables.offset += sizeof(uint32_t);                       \
+		_writeBytes += sizeof(uint32_t);                               \
+	} while (0)
+
+
+#define MP4_WRITE_32_INTERNAL(_mux, _val32, _writeBytes, _maxBytes, _reason)   \
+	do {                                                                   \
+		if (_writeBytes + sizeof(uint32_t) > _maxBytes)                \
+			return -ENOSPC;                                        \
+		ssize_t _res = write(_mux->fd, &val32, sizeof(uint32_t));      \
+		if (_res != sizeof(uint32_t)) {                                \
+			ULOGE("%s: write failed writing %s (%zd)",             \
+			      _reason,                                         \
+			      __func__,                                        \
+			      _res);                                           \
+			return -ENOSPC;                                        \
 		}                                                              \
 		_writeBytes += sizeof(uint32_t);                               \
 	} while (0)
 
 
-#define MP4_WRITE_16(_file, _val16, _writeBytes, _maxBytes)                    \
+#define MP4_WRITE_16(_mux, _val16, _writeBytes, _maxBytes)                     \
 	do {                                                                   \
 		if (_writeBytes + sizeof(uint16_t) > _maxBytes)                \
 			return -ENOSPC;                                        \
-		ssize_t _count = write(_file, &_val16, sizeof(uint16_t));      \
-		if (_count == -1) {                                            \
-			ULOG_ERRNO("write", errno);                            \
-			return -errno;                                         \
-		} else if ((size_t)_count != sizeof(uint16_t)) {               \
-			ULOG_ERRNO("only %zd bytes written instead of %zu",    \
-				   EIO,                                        \
-				   _count,                                     \
-				   sizeof(uint16_t));                          \
-			return -EIO;                                           \
+		void *_dst = memcpy(_mux->tables.buf + _mux->tables.offset,    \
+				    &_val16,                                   \
+				    sizeof(uint16_t));                         \
+		if (_dst == NULL) {                                            \
+			int _ret = -errno;                                     \
+			ULOG_ERRNO("memcpy", -_ret);                           \
+			return _ret;                                           \
 		}                                                              \
+		_mux->tables.offset += sizeof(uint16_t);                       \
 		_writeBytes += sizeof(uint16_t);                               \
 	} while (0)
 
 
-#define MP4_WRITE_8(_file, _val8, _writeBytes, _maxBytes)                      \
+#define MP4_WRITE_8(_mux, _val8, _writeBytes, _maxBytes)                       \
 	do {                                                                   \
 		if (_writeBytes + sizeof(uint8_t) > _maxBytes)                 \
 			return -ENOSPC;                                        \
-		ssize_t _count = write(_file, &_val8, sizeof(uint8_t));        \
-		if (_count == -1) {                                            \
-			ULOG_ERRNO("write", errno);                            \
-			return -errno;                                         \
-		} else if ((size_t)_count != sizeof(uint8_t)) {                \
-			ULOG_ERRNO("only %zd bytes written instead of %zu",    \
-				   EIO,                                        \
-				   _count,                                     \
-				   sizeof(uint8_t));                           \
-			return -EIO;                                           \
+		void *_dst = memcpy(_mux->tables.buf + _mux->tables.offset,    \
+				    &_val8,                                    \
+				    sizeof(uint8_t));                          \
+		if (_dst == NULL) {                                            \
+			int _ret = -errno;                                     \
+			ULOG_ERRNO("memcpy", -_ret);                           \
+			return _ret;                                           \
 		}                                                              \
+		_mux->tables.offset += sizeof(uint8_t);                        \
 		_writeBytes += sizeof(uint8_t);                                \
 	} while (0)
 
 
-#define MP4_WRITE_SKIP(_file, _byteCount, _writeBytes, _maxBytes)              \
+#define MP4_WRITE_SKIP(_mux, _byteCount, _writeBytes, _maxBytes)               \
 	do {                                                                   \
 		__typeof__(_byteCount) _i_nBytes = _byteCount;                 \
 		if (_writeBytes + _i_nBytes > _maxBytes)                       \
 			return -ENOSPC;                                        \
-		if (lseek(_file, _i_nBytes, SEEK_CUR) == -1) {                 \
+		if (_mux->tables.offset + (off_t)_i_nBytes >                   \
+		    _mux->tables.buf_size) {                                   \
+			return -EPROTO;                                        \
+		}                                                              \
+		_mux->tables.offset += _i_nBytes;                              \
+		_writeBytes += _i_nBytes;                                      \
+	} while (0)
+
+
+#define MP4_WRITE_SKIP_INTERNAL(_mux, _byteCount, _writeBytes, _maxBytes)      \
+	do {                                                                   \
+		__typeof__(_byteCount) _i_nBytes = _byteCount;                 \
+		if (_writeBytes + _i_nBytes > _maxBytes)                       \
+			return -ENOSPC;                                        \
+		if (lseek(_mux->fd, _i_nBytes, SEEK_CUR) == -1) {              \
 			ULOG_ERRNO("lseek", errno);                            \
 			return -errno;                                         \
 		}                                                              \
@@ -546,42 +620,24 @@ struct mp4_mux {
 	} while (0)
 
 
-#define MP4_WRITE_ZEROES_CHUNK_SIZE 64
-
-#define MP4_WRITE_ZEROES(_file, _byteCount, _writeBytes, _maxBytes)            \
+#define MP4_WRITE_ZEROES(_mux, _byteCount, _writeBytes, _maxBytes)             \
 	do {                                                                   \
 		__typeof__(_byteCount) _i_nBytes = _byteCount;                 \
 		if (_writeBytes + _i_nBytes > _maxBytes)                       \
 			return -ENOSPC;                                        \
-		uint8_t _i_zeroes[MP4_WRITE_ZEROES_CHUNK_SIZE] = {0};          \
-		__typeof__(_byteCount) _i_nZeroes =                            \
-			_i_nBytes < MP4_WRITE_ZEROES_CHUNK_SIZE                \
-				? _i_nBytes                                    \
-				: MP4_WRITE_ZEROES_CHUNK_SIZE;                 \
-		while (_i_nZeroes > 0) {                                       \
-			ssize_t _count = write(_file, &_i_zeroes, _i_nZeroes); \
-			if (_count == -1) {                                    \
-				ULOG_ERRNO("write", errno);                    \
-				return -errno;                                 \
-			} else if ((size_t)_count != _i_nZeroes) {             \
-				ULOG_ERRNO(                                    \
-					"only %zd bytes"                       \
-					"written instead of %zu",              \
-					EIO,                                   \
-					_count,                                \
-					_i_nZeroes);                           \
-				return -EIO;                                   \
-			}                                                      \
-			_writeBytes += _i_nZeroes;                             \
-			_i_nBytes -= _i_nZeroes;                               \
-			_i_nZeroes = _i_nBytes < MP4_WRITE_ZEROES_CHUNK_SIZE   \
-					     ? _i_nBytes                       \
-					     : MP4_WRITE_ZEROES_CHUNK_SIZE;    \
+		if (_mux->tables.offset + (off_t)_i_nBytes >                   \
+		    _mux->tables.buf_size) {                                   \
+			return -EPROTO;                                        \
 		}                                                              \
+		memset(_mux->tables.buf + _mux->tables.offset,                 \
+		       0,                                                      \
+		       (size_t)_i_nBytes);                                     \
+		_mux->tables.offset += _i_nBytes;                              \
+		_writeBytes += _i_nBytes;                                      \
 	} while (0)
 
 
-#define MP4_WRITE_CHECK_SIZE(_file, _computedSize, _actualSize)                \
+#define MP4_WRITE_CHECK_SIZE(_mux, _computedSize, _actualSize)                 \
 	do {                                                                   \
 		if (_computedSize != _actualSize) {                            \
 			uint32_t _size32 = htonl(_actualSize);                 \
@@ -590,30 +646,21 @@ struct mp4_mux {
 				      " fixing size",                          \
 				      (size_t)_actualSize,                     \
 				      (size_t)_computedSize);                  \
-			if (lseek(_file, -_actualSize, SEEK_CUR) == -1) {      \
-				ULOG_ERRNO("lseek", errno);                    \
-				return -errno;                                 \
+			if (_mux->tables.offset < _actualSize) {               \
+				ULOGE("tables offset too small");              \
+				return -EPROTO;                                \
 			}                                                      \
-			ssize_t _count =                                       \
-				write(_file, &_size32, sizeof(uint32_t));      \
-			if (_count == -1) {                                    \
-				ULOG_ERRNO("write", errno);                    \
-				return -errno;                                 \
-			} else if ((size_t)_count != sizeof(uint32_t)) {       \
-				ULOG_ERRNO(                                    \
-					"only %zd bytes written"               \
-					"instead of %zu",                      \
-					EIO,                                   \
-					_count,                                \
-					sizeof(uint32_t));                     \
-				return -EIO;                                   \
+			_mux->tables.offset -= _actualSize;                    \
+			void *_dst =                                           \
+				memcpy(_mux->tables.buf + _mux->tables.offset, \
+				       &_size32,                               \
+				       sizeof(uint32_t));                      \
+			if (_dst == NULL) {                                    \
+				int _ret = -errno;                             \
+				ULOG_ERRNO("memcpy", -_ret);                   \
+				return _ret;                                   \
 			}                                                      \
-			if (lseek(_file,                                       \
-				  _actualSize - sizeof(uint32_t),              \
-				  SEEK_CUR) == -1) {                           \
-				ULOG_ERRNO("lseek", errno);                    \
-				return -errno;                                 \
-			}                                                      \
+			_mux->tables.offset += _actualSize;                    \
 		}                                                              \
 	} while (0)
 
@@ -634,6 +681,8 @@ struct mp4_box *mp4_box_new_tkhd(struct mp4_box *parent,
 				 struct mp4_mux_track *track);
 struct mp4_box *mp4_box_new_cdsc(struct mp4_box *parent,
 				 struct mp4_mux_track *track);
+struct mp4_box *mp4_box_new_chap(struct mp4_box *parent,
+				 struct mp4_mux_track *track);
 struct mp4_box *mp4_box_new_mdhd(struct mp4_box *parent,
 				 struct mp4_mux_track *track);
 struct mp4_box *mp4_box_new_hdlr(struct mp4_box *parent,
@@ -643,6 +692,8 @@ struct mp4_box *mp4_box_new_vmhd(struct mp4_box *parent,
 struct mp4_box *mp4_box_new_smhd(struct mp4_box *parent,
 				 struct mp4_mux_track *track);
 struct mp4_box *mp4_box_new_nmhd(struct mp4_box *parent,
+				 struct mp4_mux_track *track);
+struct mp4_box *mp4_box_new_gmhd(struct mp4_box *parent,
 				 struct mp4_mux_track *track);
 struct mp4_box *mp4_box_new_dref(struct mp4_box *parent,
 				 struct mp4_mux_track *track);
@@ -723,6 +774,46 @@ int mp4_tracks_build(struct mp4_file *mp4);
 
 
 void mp4_video_decoder_config_destroy(struct mp4_video_decoder_config *vdc);
+
+
+int mp4_prepare_link_file(int fd_link_file,
+			  const char *tables_file,
+			  const char *filepath,
+			  off_t tables_size_bytes,
+			  bool check_storage_uuid);
+
+
+struct mp4_mux_track *mp4_mux_track_find_by_handle(struct mp4_mux *mux,
+						   uint32_t track_handle);
+
+
+int mp4_mux_sort_tracks(struct mp4_mux *mux);
+
+
+int mp4_mux_track_compute_tts(struct mp4_mux *mux, struct mp4_mux_track *track);
+
+
+int mp4_mux_grow_samples(struct mp4_mux_track *track, int new_samples);
+
+
+int mp4_mux_grow_chunks(struct mp4_mux_track *track, int new_chunks);
+
+
+int mp4_mux_grow_tts(struct mp4_mux_track *track, int new_tts);
+
+
+int mp4_mux_grow_stc(struct mp4_mux_track *track, int new_stc);
+
+
+int mp4_mux_grow_sync(struct mp4_mux_track *track, int new_sync);
+
+
+int mp4_mux_incremental_sync(struct mp4_mux *mux);
+
+
+int mp4_mux_fill_from_file(const char *file_path,
+			   struct mp4_mux *mux,
+			   char **error_msg);
 
 
 #endif /* !_MP4_H_ */

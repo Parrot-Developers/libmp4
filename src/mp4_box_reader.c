@@ -35,6 +35,9 @@
 /* Enable to log all table entries */
 #define LOG_ALL 0
 
+#define MAX_BOX_SIZE (10 * 1024 * 1024)
+#define MAX_ENTRY_COUNT (10 * 1024 * 1024)
+
 
 #define CHECK_SIZE(_max, _expected)                                            \
 	do {                                                                   \
@@ -228,6 +231,10 @@ mp4_box_mvhd_read(struct mp4_file *mp4, struct mp4_box *box, off_t maxBytes)
 		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		mp4->timescale = ntohl(val32);
 		ULOGD("- mvhd: timescale=%" PRIu32, mp4->timescale);
+		if (mp4->timescale == 0) {
+			ULOGE("mvhd timescale is 0");
+			return -EPROTO;
+		}
 
 		/* 'duration' */
 		MP4_READ_32(mp4->fd, val32, boxReadBytes);
@@ -266,6 +273,10 @@ mp4_box_mvhd_read(struct mp4_file *mp4, struct mp4_box *box, off_t maxBytes)
 		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		mp4->timescale = ntohl(val32);
 		ULOGD("- mvhd: timescale=%" PRIu32, mp4->timescale);
+		if (mp4->timescale == 0) {
+			ULOGE("mvhd timescale is 0");
+			return -EPROTO;
+		}
 
 		/* 'duration' */
 		MP4_READ_32(mp4->fd, val32, boxReadBytes);
@@ -573,6 +584,10 @@ static off_t mp4_box_mdhd_read(struct mp4_file *mp4,
 		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->timescale = ntohl(val32);
 		ULOGD("- mdhd: timescale=%" PRIu32, track->timescale);
+		if (track->timescale == 0) {
+			ULOGE("mdhd timescale is 0");
+			return -EPROTO;
+		}
 
 		/* 'duration' */
 		MP4_READ_32(mp4->fd, val32, boxReadBytes);
@@ -612,6 +627,10 @@ static off_t mp4_box_mdhd_read(struct mp4_file *mp4,
 		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->timescale = ntohl(val32);
 		ULOGD("- mdhd: timescale=%" PRIu32, track->timescale);
+		if (track->timescale == 0) {
+			ULOGE("mdhd timescale is 0");
+			return -EPROTO;
+		}
 
 		/* 'duration' */
 		MP4_READ_32(mp4->fd, val32, boxReadBytes);
@@ -967,6 +986,10 @@ mp4_box_avcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 	uint8_t ppsCount;
 	MP4_READ_8(mp4->fd, ppsCount, boxReadBytes);
 	ULOGD("- avcC: pps_count=%d", ppsCount);
+	if (ppsCount > INT8_MAX) {
+		ULOGE("ppsCount exceeds the maximum count %" PRIu8, ppsCount);
+		return -EPROTO;
+	}
 
 	minBytes += 2 * ppsCount;
 	CHECK_SIZE(maxBytes, minBytes);
@@ -1235,6 +1258,7 @@ mp4_box_hvcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 static off_t
 mp4_box_esds_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 {
+	int ret;
 	off_t boxReadBytes = 0, minBytes = 9;
 	uint32_t val32;
 	uint16_t val16;
@@ -1390,8 +1414,13 @@ mp4_box_esds_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 		}
 		ssize_t count = read(mp4->fd, track->audioSpecificConfig, size);
 		if (count == -1) {
-			ULOG_ERRNO("read", errno);
-			return -errno;
+			ret = -errno;
+			ULOG_ERRNO("read", -ret);
+			return ret;
+		} else if (count != (ssize_t)size) {
+			ret = -ENODATA;
+			ULOG_ERRNO("read", -ret);
+			return ret;
 		}
 		ULOGD("- esds: read %zd bytes for audioSpecificConfig",
 		      (ssize_t)size);
@@ -1440,6 +1469,11 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint32_t entryCount = ntohl(val32);
 	ULOGD("- stsd: entry_count=%" PRIu32, entryCount);
+	if (entryCount > MAX_ENTRY_COUNT) {
+		ULOGE("entry count exceeds the maximum count %" PRIu32,
+		      entryCount);
+		return -EPROTO;
+	}
 
 	unsigned int i;
 	for (i = 0; i < entryCount; i++) {
@@ -1510,8 +1544,13 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 					     &compressorname,
 					     sizeof(compressorname));
 			if (count == -1) {
-				ULOG_ERRNO("read", errno);
-				return -errno;
+				ret = -errno;
+				ULOG_ERRNO("read", -ret);
+				return ret;
+			} else if (count != sizeof(compressorname)) {
+				ret = -ENODATA;
+				ULOG_ERRNO("read", -ret);
+				return ret;
 			}
 			boxReadBytes += sizeof(compressorname);
 			ULOGD("- stsd: compressorname=%s", compressorname);
@@ -1754,6 +1793,12 @@ static off_t mp4_box_stts_read(struct mp4_file *mp4,
 	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	track->timeToSampleEntryCount = ntohl(val32);
 	ULOGD("- stts: entry_count=%" PRIu32, track->timeToSampleEntryCount);
+	if (track->timeToSampleEntryCount > MAX_ENTRY_COUNT) {
+		ULOGE("timeToSampleEntryCount exceeds maximum entry "
+		      "count %" PRIu32,
+		      track->timeToSampleEntryCount);
+		return -EPROTO;
+	}
 
 	track->timeToSampleEntries =
 		malloc(track->timeToSampleEntryCount *
@@ -1820,6 +1865,12 @@ static off_t mp4_box_stss_read(struct mp4_file *mp4,
 	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	track->syncSampleEntryCount = ntohl(val32);
 	ULOGD("- stss: entry_count=%" PRIu32, track->syncSampleEntryCount);
+	if (track->syncSampleEntryCount > MAX_ENTRY_COUNT) {
+		ULOGE("track->syncSampleEntryCount exceeds maximum "
+		      "size %" PRIu32,
+		      track->syncSampleEntryCount);
+		return -EPROTO;
+	}
 
 	track->syncSampleEntries =
 		malloc(track->syncSampleEntryCount * sizeof(uint32_t));
@@ -1885,6 +1936,11 @@ static off_t mp4_box_stsz_read(struct mp4_file *mp4,
 	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	track->sampleCount = ntohl(val32);
 	ULOGD("- stsz: sample_count=%" PRIu32, track->sampleCount);
+	if (track->sampleCount > MAX_ENTRY_COUNT) {
+		ULOGE("track->sampleCount exceeds maximum size %" PRIu32,
+		      track->sampleCount);
+		return -EPROTO;
+	}
 
 	track->sampleSize = malloc(track->sampleCount * sizeof(uint32_t));
 	if (track->sampleSize == NULL) {
@@ -1951,6 +2007,12 @@ static off_t mp4_box_stsc_read(struct mp4_file *mp4,
 	/* 'entry_count' */
 	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	track->sampleToChunkEntryCount = ntohl(val32);
+	if (track->sampleToChunkEntryCount > MAX_ENTRY_COUNT) {
+		ULOGE("track->sampleToChunkEntryCount exceeds maximum entry "
+		      " count %" PRIu32,
+		      track->sampleToChunkEntryCount);
+		return -EPROTO;
+	}
 	ULOGD("- stsc: entry_count=%" PRIu32, track->sampleToChunkEntryCount);
 
 	track->sampleToChunkEntries =
@@ -2030,6 +2092,11 @@ static off_t mp4_box_stco_read(struct mp4_file *mp4,
 	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	track->chunkCount = ntohl(val32);
 	ULOGD("- stco: entry_count=%" PRIu32, track->chunkCount);
+	if (track->chunkCount > MAX_ENTRY_COUNT) {
+		ULOGE("track->chunkCount exceeds maximum entry count %" PRIu32,
+		      track->chunkCount);
+		return -EPROTO;
+	}
 
 	track->chunkOffset = malloc(track->chunkCount * sizeof(uint64_t));
 	if (track->chunkOffset == NULL) {
@@ -2088,6 +2155,11 @@ static off_t mp4_box_co64_read(struct mp4_file *mp4,
 	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	track->chunkCount = ntohl(val32);
 	ULOGD("- co64: entry_count=%" PRIu32, track->chunkCount);
+	if (track->chunkCount > MAX_ENTRY_COUNT) {
+		ULOGE("track->chunkCount exceeds maximum entry count %" PRIu32,
+		      track->chunkCount);
+		return -EPROTO;
+	}
 
 	track->chunkOffset = malloc(track->chunkCount * sizeof(uint64_t));
 	if (track->chunkOffset == NULL) {
@@ -2124,6 +2196,7 @@ static off_t mp4_box_xyz_read(struct mp4_file *mp4,
 			      off_t maxBytes,
 			      struct mp4_track *track)
 {
+	int ret;
 	off_t boxReadBytes = 0;
 	uint16_t val16;
 
@@ -2165,9 +2238,15 @@ static off_t mp4_box_xyz_read(struct mp4_file *mp4,
 	}
 	ssize_t count = read(mp4->fd, mp4->udtaLocationValue, locationSize);
 	if (count == -1) {
-		ULOG_ERRNO("read", errno);
-		return -errno;
+		ret = -errno;
+		ULOG_ERRNO("read", -ret);
+		return ret;
+	} else if (count != (ssize_t)locationSize) {
+		ret = -ENODATA;
+		ULOG_ERRNO("read", -ret);
+		return ret;
 	}
+
 	boxReadBytes += locationSize;
 	mp4->udtaLocationValue[locationSize] = '\0';
 	ULOGD("- xyz: location=%s", mp4->udtaLocationValue);
@@ -2220,6 +2299,11 @@ static int mp4_ilst_sub_box_count(struct mp4_file *mp4,
 			realBoxSize = (uint64_t)ntohl(val32) << 32;
 			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			realBoxSize |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
+			if (realBoxSize > MAX_BOX_SIZE) {
+				ULOGE("realBoxSize exceeds maximum size %ld",
+				      (long)realBoxSize);
+				return -EPROTO;
+			}
 		} else
 			realBoxSize = size;
 
@@ -2250,6 +2334,7 @@ static off_t mp4_box_meta_keys_read(struct mp4_file *mp4,
 				    off_t maxBytes,
 				    struct mp4_track *track)
 {
+	int ret;
 	off_t boxReadBytes = 0;
 	uint32_t val32, i;
 	unsigned int metadataCount;
@@ -2269,6 +2354,11 @@ static off_t mp4_box_meta_keys_read(struct mp4_file *mp4,
 	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	metadataCount = ntohl(val32);
 	ULOGD("- keys: entry_count=%" PRIu32, metadataCount);
+	if (metadataCount > MAX_ENTRY_COUNT) {
+		ULOGE("metadataCount exceeds maximum entry count %" PRIu32,
+		      metadataCount);
+		return -EPROTO;
+	}
 
 	CHECK_SIZE(maxBytes, 4 + metadataCount * 8);
 
@@ -2327,9 +2417,15 @@ static off_t mp4_box_meta_keys_read(struct mp4_file *mp4,
 		}
 		ssize_t count = read(mp4->fd, metadataKey[i], keySize);
 		if (count == -1) {
-			ULOG_ERRNO("read", errno);
-			return -errno;
+			ret = -errno;
+			ULOG_ERRNO("read", -ret);
+			return ret;
+		} else if (count != (ssize_t)keySize) {
+			ret = -ENODATA;
+			ULOG_ERRNO("read", -ret);
+			return ret;
 		}
+
 		boxReadBytes += keySize;
 		metadataKey[i][keySize] = '\0';
 		ULOGD("- keys: key_value[%i]=%s", i, metadataKey[i]);
@@ -2351,6 +2447,7 @@ static off_t mp4_box_meta_data_read(struct mp4_file *mp4,
 				    off_t maxBytes,
 				    struct mp4_track *track)
 {
+	int ret;
 	off_t boxReadBytes = 0;
 	uint32_t val32;
 	unsigned int metadataCount;
@@ -2407,8 +2504,13 @@ static off_t mp4_box_meta_data_read(struct mp4_file *mp4,
 			ssize_t count = read(
 				mp4->fd, mp4->udtaMetadataValue[idx], valueLen);
 			if (count == -1) {
-				ULOG_ERRNO("read", errno);
-				return -errno;
+				ret = -errno;
+				ULOG_ERRNO("read", -ret);
+				return ret;
+			} else if (count != (ssize_t)valueLen) {
+				ret = -ENODATA;
+				ULOG_ERRNO("read", -ret);
+				return ret;
 			}
 			boxReadBytes += valueLen;
 			mp4->udtaMetadataValue[idx][valueLen] = '\0';
@@ -2438,8 +2540,13 @@ static off_t mp4_box_meta_data_read(struct mp4_file *mp4,
 				ssize_t count = read(
 					mp4->fd, metadataValue[idx], valueLen);
 				if (count == -1) {
-					ULOG_ERRNO("read", errno);
-					return -errno;
+					ret = -errno;
+					ULOG_ERRNO("read", -ret);
+					return ret;
+				} else if (count != (ssize_t)valueLen) {
+					ret = -ENODATA;
+					ULOG_ERRNO("read", -ret);
+					return ret;
 				}
 				boxReadBytes += valueLen;
 				metadataValue[idx][valueLen] = '\0';
@@ -2601,13 +2708,20 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		/* Check for truncated box */
 		if (maxBytes < parentReadBytes + realBoxSize) {
 			/* Not a fatal error */
-			ULOGW("box 0x%08x: invalid size: %" PRIi64
+			ULOGW("box '%c%c%c%c': invalid size: %" PRIi64
 			      ", expected %" PRIi64 " min",
-			      box->type,
+			      (box->type >> 24) & 0xFF,
+			      (box->type >> 16) & 0xFF,
+			      (box->type >> 8) & 0xFF,
+			      box->type & 0xFF,
 			      (int64_t)maxBytes,
 			      (int64_t)parentReadBytes + realBoxSize);
 			return maxBytes;
 		}
+
+		if (realBoxSize < boxReadBytes ||
+		    realBoxSize - boxReadBytes > MAX_BOX_SIZE)
+			goto skip_box;
 
 		switch (box->type) {
 		case MP4_UUID: {
@@ -2633,7 +2747,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			off_t _ret = mp4_box_children_read(
 				mp4, box, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
-				return _ret;
+				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
 			break;
 		}
@@ -2641,7 +2755,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			off_t _ret = mp4_box_ftyp_read(
 				mp4, box, realBoxSize - boxReadBytes);
 			if (_ret < 0)
-				return _ret;
+				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
 			break;
 		}
@@ -2649,7 +2763,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			off_t _ret = mp4_box_mvhd_read(
 				mp4, box, realBoxSize - boxReadBytes);
 			if (_ret < 0)
-				return _ret;
+				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
 			break;
 		}
@@ -2664,7 +2778,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			off_t _ret = mp4_box_children_read(
 				mp4, box, realBoxSize - boxReadBytes, tk);
 			if (_ret < 0)
-				return _ret;
+				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
 			break;
 		}
@@ -2672,7 +2786,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			off_t _ret = mp4_box_tkhd_read(
 				mp4, box, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
-				return _ret;
+				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
 			break;
 		}
@@ -2680,7 +2794,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			off_t _ret = mp4_box_tref_read(
 				mp4, box, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
-				return _ret;
+				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
 			break;
 		}
@@ -2688,7 +2802,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			off_t _ret = mp4_box_hdlr_read(
 				mp4, box, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
-				return _ret;
+				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
 			break;
 		}
@@ -2696,7 +2810,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			off_t _ret = mp4_box_mdhd_read(
 				mp4, box, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
-				return _ret;
+				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
 			break;
 		}
@@ -2704,7 +2818,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			off_t _ret = mp4_box_vmhd_read(
 				mp4, box, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
-				return _ret;
+				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
 			break;
 		}
@@ -2712,7 +2826,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			off_t _ret = mp4_box_smhd_read(
 				mp4, box, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
-				return _ret;
+				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
 			break;
 		}
@@ -2720,7 +2834,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			off_t _ret = mp4_box_hmhd_read(
 				mp4, box, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
-				return _ret;
+				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
 			break;
 		}
@@ -2728,7 +2842,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			off_t _ret = mp4_box_nmhd_read(
 				mp4, box, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
-				return _ret;
+				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
 			break;
 		}
@@ -2736,7 +2850,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			off_t _ret = mp4_box_stsd_read(
 				mp4, box, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
-				return _ret;
+				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
 			break;
 		}
@@ -2744,7 +2858,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			off_t _ret = mp4_box_stts_read(
 				mp4, box, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
-				return _ret;
+				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
 			break;
 		}
@@ -2752,7 +2866,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			off_t _ret = mp4_box_stss_read(
 				mp4, box, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
-				return _ret;
+				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
 			break;
 		}
@@ -2760,7 +2874,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			off_t _ret = mp4_box_stsz_read(
 				mp4, box, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
-				return _ret;
+				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
 			break;
 		}
@@ -2768,7 +2882,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			off_t _ret = mp4_box_stsc_read(
 				mp4, box, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
-				return _ret;
+				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
 			break;
 		}
@@ -2776,7 +2890,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			off_t _ret = mp4_box_stco_read(
 				mp4, box, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
-				return _ret;
+				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
 			break;
 		}
@@ -2784,7 +2898,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			off_t _ret = mp4_box_co64_read(
 				mp4, box, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
-				return _ret;
+				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
 			break;
 		}
@@ -2806,7 +2920,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 					realBoxSize - boxReadBytes,
 					track);
 				if (_ret < 0)
-					return _ret;
+					return OFF_T_TO_ERRNO(_ret, EPROTO);
 				boxReadBytes += _ret;
 			} else if ((parent->type == MP4_MOVIE_BOX) ||
 				   (parent->type == MP4_TRACK_BOX)) {
@@ -2816,7 +2930,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 					realBoxSize - boxReadBytes,
 					track);
 				if (_ret < 0)
-					return _ret;
+					return OFF_T_TO_ERRNO(_ret, EPROTO);
 				boxReadBytes += _ret;
 			}
 			break;
@@ -2824,6 +2938,14 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		case MP4_ILST_BOX: {
 			if ((parent->parent) &&
 			    (parent->parent->type == MP4_USER_DATA_BOX)) {
+				if (realBoxSize - boxReadBytes < 0 ||
+				    realBoxSize - boxReadBytes > MAX_BOX_SIZE) {
+					ULOGE("ilst box size exceeds maximum "
+					      "size (%ld)",
+					      (long)(realBoxSize -
+						     boxReadBytes));
+					return -EPROTO;
+				}
 				int count = mp4_ilst_sub_box_count(
 					mp4,
 					box,
@@ -2871,15 +2993,21 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			off_t _ret = mp4_box_children_read(
 				mp4, box, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
-				return _ret;
+				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
 			break;
 		}
 		case MP4_DATA_BOX: {
+			if (realBoxSize - boxReadBytes > MAX_BOX_SIZE) {
+				ULOGE("meta data box size exceeds maximum "
+				      "size (%ld)",
+				      (long)(realBoxSize - boxReadBytes));
+				return -EPROTO;
+			}
 			off_t _ret = mp4_box_meta_data_read(
 				mp4, box, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
-				return _ret;
+				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
 			break;
 		}
@@ -2891,7 +3019,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 					realBoxSize - boxReadBytes,
 					track);
 				if (_ret < 0)
-					return _ret;
+					return OFF_T_TO_ERRNO(_ret, EPROTO);
 				boxReadBytes += _ret;
 			}
 			break;
@@ -2904,7 +3032,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 					realBoxSize - boxReadBytes,
 					track);
 				if (_ret < 0)
-					return _ret;
+					return OFF_T_TO_ERRNO(_ret, EPROTO);
 				boxReadBytes += _ret;
 			}
 			break;
@@ -2917,12 +3045,15 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 					realBoxSize - boxReadBytes,
 					track);
 				if (_ret < 0)
-					return _ret;
+					return OFF_T_TO_ERRNO(_ret, EPROTO);
 				boxReadBytes += _ret;
 			}
 			break;
 		}
 		}
+		/* clang-format off */
+skip_box:
+		/* clang-format on */
 
 		/* Skip the rest of the box */
 		if (realBoxSize < boxReadBytes) {
@@ -3004,5 +3135,36 @@ int mp4_generate_avc_decoder_config(const uint8_t *sps,
 	off += pps_size;
 
 	*avcc_size = off;
+	return 0;
+}
+
+
+MP4_API int mp4_generate_chapter_sample(const char *chapter_str,
+					uint8_t **buffer,
+					unsigned int *buffer_size)
+{
+	uint16_t val16;
+	uint8_t *buf = NULL;
+	size_t buf_size = 0;
+	size_t chap_len = 0;
+
+	ULOG_ERRNO_RETURN_ERR_IF(chapter_str == NULL, EINVAL);
+	ULOG_ERRNO_RETURN_ERR_IF(buffer == NULL, EINVAL);
+	ULOG_ERRNO_RETURN_ERR_IF(buffer_size == NULL, EINVAL);
+	chap_len = strlen(chapter_str);
+	ULOG_ERRNO_RETURN_ERR_IF(chap_len < 1, EINVAL);
+
+	buf_size = sizeof(val16) + chap_len + 1;
+	buf = calloc(1, buf_size);
+	if (buf == NULL)
+		return -ENOMEM;
+
+	val16 = htons(chap_len);
+	memcpy(buf, &val16, sizeof(val16));
+	memcpy(buf + sizeof(val16), chapter_str, chap_len);
+
+	*buffer = buf;
+	*buffer_size = buf_size;
+
 	return 0;
 }

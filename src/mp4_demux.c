@@ -171,7 +171,7 @@ int mp4_demux_open(const char *filename, struct mp4_demux **ret_obj)
 
 	retBytes = mp4_box_children_read(mp4, mp4->root, mp4->fileSize, NULL);
 	if (retBytes < 0) {
-		ret = retBytes;
+		ret = OFF_T_TO_ERRNO(retBytes, EPROTO);
 		goto error;
 	}
 	mp4->readBytes += retBytes;
@@ -288,6 +288,56 @@ get_seek_sample(struct mp4_track *tk, int start, enum mp4_seek_method method)
 }
 
 
+static int get_metadata_sample_from_ref_track(struct mp4_track *ref_tk,
+					      int ref_sample)
+{
+	int idx;
+	struct mp4_track *metatk = ref_tk->metadata;
+	uint64_t prev_sample_time = INT64_MAX, next_sample_time = INT64_MAX;
+
+	if (!metatk)
+		return -ENOENT;
+
+	uint64_t sample_time = ref_tk->sampleDecodingTime[ref_sample];
+	if ((ref_sample - 1) >= 0)
+		prev_sample_time = ref_tk->sampleDecodingTime[ref_sample - 1];
+	if ((ref_sample + 1) < (int)ref_tk->sampleCount)
+		next_sample_time = ref_tk->sampleDecodingTime[ref_sample + 1];
+
+	idx = mp4_track_find_sample_by_time(
+		metatk,
+		mp4_convert_timescale(
+			sample_time, ref_tk->timescale, metatk->timescale),
+		MP4_TIME_CMP_NEAREST,
+		0,
+		0);
+	if (idx < 0)
+		return -ENOENT;
+
+	uint64_t meta_sample_time =
+		mp4_convert_timescale(metatk->sampleDecodingTime[idx],
+				      metatk->timescale,
+				      ref_tk->timescale);
+
+	/* Exact match: return */
+	if (meta_sample_time == sample_time)
+		return idx;
+
+	uint64_t delta_time =
+		llabs((int64_t)meta_sample_time - (int64_t)sample_time);
+	uint64_t prev_delta_time =
+		llabs((int64_t)meta_sample_time - (int64_t)prev_sample_time);
+	uint64_t next_delta_time =
+		llabs((int64_t)meta_sample_time - (int64_t)next_sample_time);
+
+	/* Return metadata sample only if closest to the current sample */
+	if ((delta_time < prev_delta_time) && (delta_time < next_delta_time))
+		return idx;
+
+	return -ENOENT;
+}
+
+
 int mp4_demux_seek(struct mp4_demux *demux,
 		   uint64_t time_offset,
 		   enum mp4_seek_method method)
@@ -301,9 +351,6 @@ int mp4_demux_seek(struct mp4_demux *demux,
 
 	list_walk_entry_forward(&mp4->tracks, tk, node)
 	{
-		if (tk->type == MP4_TRACK_TYPE_CHAPTERS)
-			continue;
-
 		int found = 0, i, idx = 0;
 		uint64_t ts =
 			mp4_usec_to_sample_time(time_offset, tk->timescale);
@@ -339,16 +386,6 @@ int mp4_demux_seek(struct mp4_demux *demux,
 			      mp4_sample_time_to_usec(
 				      tk->sampleDecodingTime[idx],
 				      tk->timescale));
-			if (tk->metadata) {
-				if (((unsigned)idx <
-				     tk->metadata->sampleCount) &&
-				    (tk->sampleDecodingTime[idx] ==
-				     tk->metadata->sampleDecodingTime[idx]))
-					tk->metadata->nextSample = idx;
-				else
-					ULOGW("failed to sync metadata"
-					      " with ref track");
-			}
 		} else {
 			ULOGE("unable to seek in track");
 			return -ENOENT;
@@ -403,7 +440,7 @@ int mp4_demux_get_track_info(struct mp4_demux *demux,
 
 	mp4 = &demux->mp4;
 
-	ULOG_ERRNO_RETURN_ERR_IF(track_idx >= mp4->trackCount, EINVAL);
+	ULOG_ERRNO_RETURN_ERR_IF(track_idx >= mp4->trackCount, ENOENT);
 
 	tk = mp4_track_find_by_idx(mp4, track_idx);
 	if (tk == NULL) {
@@ -594,6 +631,7 @@ int mp4_demux_get_track_sample(struct mp4_demux *demux,
 	sample_size = tk->sampleSize[tk->nextSample];
 	sample_offset = tk->sampleOffset[tk->nextSample];
 	track_sample->size = sample_size;
+	track_sample->offset = sample_offset;
 	if ((sample_buffer) && (sample_size > 0) &&
 	    (sample_size <= sample_buffer_size)) {
 		off_t _ret = lseek(mp4->fd, sample_offset, SEEK_SET);
@@ -606,8 +644,12 @@ int mp4_demux_get_track_sample(struct mp4_demux *demux,
 			track_sample->size = 0;
 			sample_size = 0;
 			_ret = -errno;
-			if (_ret == 0)
-				_ret = -ENODATA;
+			ULOG_ERRNO("read", -_ret);
+			return _ret;
+		} else if (count != (ssize_t)sample_size) {
+			track_sample->size = 0;
+			sample_size = 0;
+			_ret = -ENODATA;
 			ULOG_ERRNO("read", -_ret);
 			return _ret;
 		}
@@ -617,39 +659,47 @@ int mp4_demux_get_track_sample(struct mp4_demux *demux,
 		      sample_size);
 		return -ENOBUFS;
 	}
-	if ((tk->metadata) && (tk->nextSample < tk->metadata->sampleCount)) {
+	sampleTime = tk->sampleDecodingTime[tk->nextSample];
+	if (tk->metadata) {
 		struct mp4_track *metatk = tk->metadata;
-		/* TODO: check sync between metadata and ref track */
-		metadata_size = metatk->sampleSize[tk->nextSample];
-		metadata_offset = metatk->sampleOffset[tk->nextSample];
-		track_sample->metadata_size = metadata_size;
-		if ((metadata_buffer) && (metadata_size > 0) &&
-		    (metadata_size <= metadata_buffer_size)) {
-			off_t _ret = lseek(mp4->fd, metadata_offset, SEEK_SET);
-			if (_ret == -1) {
-				ULOG_ERRNO("lseek", errno);
-				return -errno;
+		int idx =
+			get_metadata_sample_from_ref_track(tk, tk->nextSample);
+		if (idx < 0) {
+			ULOGD("no metadata available at sample time: %" PRIu64,
+			      sampleTime);
+		} else {
+			metadata_size = metatk->sampleSize[idx];
+			metadata_offset = metatk->sampleOffset[idx];
+			track_sample->metadata_size = metadata_size;
+			if ((metadata_buffer) && (metadata_size > 0) &&
+			    (metadata_size <= metadata_buffer_size)) {
+				off_t _ret = lseek(
+					mp4->fd, metadata_offset, SEEK_SET);
+				if (_ret == -1) {
+					ULOG_ERRNO("lseek", errno);
+					return -errno;
+				}
+				ssize_t count = read(mp4->fd,
+						     metadata_buffer,
+						     metadata_size);
+				if (count == -1) {
+					track_sample->metadata_size = 0;
+					_ret = -errno;
+					if (_ret == 0)
+						_ret = -ENODATA;
+					ULOG_ERRNO("read", -_ret);
+					return _ret;
+				}
+			} else if ((metadata_buffer) &&
+				   (metadata_size > metadata_buffer_size)) {
+				ULOGE("buffer too small for metadata "
+				      "(%d bytes, %d needed)",
+				      metadata_buffer_size,
+				      metadata_size);
+				return -ENOBUFS;
 			}
-			ssize_t count =
-				read(mp4->fd, metadata_buffer, metadata_size);
-			if (count == -1) {
-				track_sample->metadata_size = 0;
-				_ret = -errno;
-				if (_ret == 0)
-					_ret = -ENODATA;
-				ULOG_ERRNO("read", -_ret);
-				return _ret;
-			}
-		} else if ((metadata_buffer) &&
-			   (metadata_size > metadata_buffer_size)) {
-			ULOGE("buffer too small for metadata "
-			      "(%d bytes, %d needed)",
-			      metadata_buffer_size,
-			      metadata_size);
-			return -ENOBUFS;
 		}
 	}
-	sampleTime = tk->sampleDecodingTime[tk->nextSample];
 	track_sample->silent =
 		((tk->pendingSeekTime) && (sampleTime < tk->pendingSeekTime));
 	if (sampleTime >= tk->pendingSeekTime)
@@ -932,6 +982,7 @@ int mp4_demux_get_metadata_cover(struct mp4_demux *demux,
 				 unsigned int *cover_size,
 				 enum mp4_metadata_cover_type *cover_type)
 {
+	int ret;
 	struct mp4_file *mp4;
 
 	ULOG_ERRNO_RETURN_ERR_IF(demux == NULL, EINVAL);
@@ -954,8 +1005,13 @@ int mp4_demux_get_metadata_cover(struct mp4_demux *demux,
 			ssize_t count = read(
 				mp4->fd, cover_buffer, mp4->finalCoverSize);
 			if (count == -1) {
-				ULOG_ERRNO("read", errno);
-				return -errno;
+				ret = -errno;
+				ULOG_ERRNO("read", -ret);
+				return ret;
+			} else if (count != (ssize_t)mp4->finalCoverSize) {
+				ret = -ENODATA;
+				ULOG_ERRNO("read", -ret);
+				return ret;
 			}
 		} else if (cover_buffer) {
 			ULOGE("buffer too small (%d bytes, %d needed)",

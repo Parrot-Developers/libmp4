@@ -29,15 +29,16 @@
 #	define _FILE_OFFSET_BITS 64
 #endif
 
+#include <getopt.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
-#define ULOG_TAG mp4_demux_test
+#define ULOG_TAG mp4_demux
 #include <ulog.h>
-ULOG_DECLARE_TAG(mp4_demux_test);
+ULOG_DECLARE_TAG(mp4_demux);
 
 #include <futils/futils.h>
 #include <libmp4.h>
@@ -46,11 +47,8 @@ ULOG_DECLARE_TAG(mp4_demux_test);
 #define DATE_SIZE 26
 
 
-/* Enable to write the cover to a file */
-#define WRITE_COVER 0
-
-/* Enable to log all frames */
-#define LOG_FRAMES 0
+static bool log_frames;
+static const char *cover_file;
 
 
 static void print_info(struct mp4_demux *demux)
@@ -229,7 +227,7 @@ static void print_metadata(struct mp4_demux *demux)
 
 	if (cover_size > 0) {
 		cover_buffer_size = cover_size;
-		cover_buffer = malloc(cover_buffer_size);
+		cover_buffer = calloc(1, cover_buffer_size);
 		if (!cover_buffer)
 			return;
 
@@ -243,13 +241,13 @@ static void print_metadata(struct mp4_demux *demux)
 		} else {
 			printf("Cover present (%s)\n\n",
 			       mp4_metadata_cover_type_str(type));
-#if WRITE_COVER
-			FILE *fCover = fopen("cover.jpg", "wb");
-			if (fCover) {
-				fwrite(cover_buffer, cover_size, 1, fCover);
-				fclose(fCover);
+			if (cover_file && strlen(cover_file)) {
+				FILE *f = fopen(cover_file, "wb");
+				if (f) {
+					fwrite(cover_buffer, cover_size, 1, f);
+					fclose(f);
+				}
 			}
-#endif /* WRITE_COVER */
 		}
 
 		free(cover_buffer);
@@ -330,14 +328,18 @@ static void print_frames(struct mp4_demux *demux)
 			continue;
 		}
 
-		printf("Frame #%d size=%06" PRIu32 " metadata_size=%" PRIu32
-		       " dts=%" PRIu64 " next_dts=%" PRIu64 " sync=%d\n",
+		if (sample.size == 0)
+			break;
+
+		printf("Frame #%d size=%06" PRIu32 " offset=0x%08" PRIX64
+		       " metadata_size=%" PRIu32 " dts=%" PRIu64 " sync=%d\n",
 		       i,
 		       sample.size,
+		       sample.offset,
 		       sample.metadata_size,
 		       sample.dts,
-		       sample.next_dts,
 		       sample.sync);
+
 		i++;
 	} while (sample.size);
 
@@ -347,7 +349,7 @@ static void print_frames(struct mp4_demux *demux)
 
 static void welcome(char *prog_name)
 {
-	printf("\n%s - MP4 file library demuxer test program\n"
+	printf("\n%s - MP4 file library demuxer program\n"
 	       "Copyright (c) 2018 Parrot Drones SAS\n"
 	       "Copyright (c) 2016 Aurelien Barre\n\n",
 	       prog_name);
@@ -356,20 +358,111 @@ static void welcome(char *prog_name)
 
 static void usage(char *prog_name)
 {
-	printf("Usage: %s <file>\n", prog_name);
+	/* clang-format off */
+	printf("Usage: %s [options]\n"
+	       "Options:\n"
+		"  -h | --help                          "
+		       "Print this message\n"
+		"       --frames                        "
+		       "Print frames information\n"
+		"       --cover <cover_file_name>       "
+		       "Cover output file\n"
+		"  -j | --json <json_file>              "
+		       "Output to JSON file\n"
+		"  -f | --force                         "
+		       "Force json output on any video\n"
+		"  -p | --pretty                        "
+		       "Pretty output for JSON file\n"
+	       "\n",
+	       prog_name);
+	/* clang-format off */
 }
+
+
+enum args_id {
+	ARGS_ID_FRAMES = 256,
+	ARGS_ID_COVER,
+};
+
+
+static const char short_options[] = "hj:pf";
+
+
+static const struct option long_options[] = {
+	{"help", no_argument, NULL, 'h'},
+	{"frames", no_argument, NULL, ARGS_ID_FRAMES},
+	{"cover", required_argument, NULL, ARGS_ID_COVER},
+	{"force", no_argument, NULL, 'f'},
+	{"json", required_argument, NULL, 'j'},
+	{"pretty", no_argument, NULL, 'p'},
+	{0, 0, 0, 0},
+};
 
 
 int main(int argc, char **argv)
 {
-	int ret = 0, status = EXIT_SUCCESS;
+	int ret = 0, err = 0, status = EXIT_SUCCESS;
+	int idx, c;
 	struct mp4_demux *demux;
 	struct timespec ts = {0, 0};
 	uint64_t start_time = 0, end_time = 0;
+	const char *input_file = NULL;
+	const char *json_file = NULL;
+	bool pretty = false;
+	bool force = false;
+
+	log_frames = false;
+	cover_file = NULL;
 
 	welcome(argv[0]);
 
-	if (argc < 2) {
+	/* Command-line parameters */
+	while ((c = getopt_long(
+			argc, argv, short_options, long_options, &idx)) != -1) {
+		switch (c) {
+		case 0:
+			break;
+
+		case 'h':
+			usage(argv[0]);
+			exit(EXIT_SUCCESS);
+			break;
+
+		case ARGS_ID_FRAMES:
+			log_frames = true;
+			break;
+
+		case ARGS_ID_COVER:
+			cover_file = optarg;
+			break;
+
+		case 'j':
+			json_file = optarg;
+			break;
+
+		case 'p':
+			pretty = true;
+			break;
+
+		case 'f':
+			force = true;
+			break;
+
+		default:
+			usage(argv[0]);
+			exit(EXIT_FAILURE);
+			break;
+		}
+	}
+
+	if (argc - optind < 1) {
+		usage(argv[0]);
+		exit(EXIT_FAILURE);
+	}
+
+	input_file = argv[optind];
+
+	if (json_file == NULL && (pretty || force)) {
 		usage(argv[0]);
 		exit(EXIT_FAILURE);
 	}
@@ -377,29 +470,43 @@ int main(int argc, char **argv)
 	time_get_monotonic(&ts);
 	time_timespec_to_us(&ts, &start_time);
 
-	ret = mp4_demux_open(argv[1], &demux);
+	ret = mp4_demux_open(input_file, &demux);
 
 	time_get_monotonic(&ts);
 	time_timespec_to_us(&ts, &end_time);
 
 	if (ret < 0) {
-		ULOG_ERRNO("mp4_demux_open", -ret);
+		ULOG_ERRNO("mp4_demux_open('%s')", -ret, input_file);
 		status = EXIT_FAILURE;
 		goto cleanup;
 	}
 
-	printf("File '%s'\n", argv[1]);
+	printf("File '%s'\n", input_file);
 	printf("Processing time: %.2fms\n\n",
 	       (float)(end_time - start_time) / 1000.);
 	print_info(demux);
 	print_tracks(demux);
 	print_metadata(demux);
 	print_chapters(demux);
-#if LOG_FRAMES
-	print_frames(demux);
-#endif /* LOG_FRAMES */
+	if (log_frames)
+		print_frames(demux);
 
 cleanup:
+	if (json_file != NULL && (ret == 0 || force)) {
+		printf("MP4 structure:\n");
+		struct json_object *json = NULL;
+		err = mp4_file_to_json(input_file, true, &json);
+		if (err < 0)
+			ULOG_ERRNO("mp4_file_to_json", -err);
+		if (json != NULL) {
+			err = json_object_to_file_ext(
+			json_file, json, pretty ? JSON_C_TO_STRING_PRETTY : 0);
+			if (err < 0)
+				ULOG_ERRNO("json_object_to_file_ext", -err);
+			json_object_put(json);
+			printf("\n");
+		}
+	}
 	if (demux != NULL) {
 		ret = mp4_demux_close(demux);
 		if (ret < 0) {

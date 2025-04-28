@@ -41,9 +41,9 @@
 #include <libmp4.h>
 
 
-#define ULOG_TAG mp4_mux_test
+#define ULOG_TAG mp4_mux
 #include <ulog.h>
-ULOG_DECLARE_TAG(mp4_mux_test);
+ULOG_DECLARE_TAG(mp4_mux);
 
 
 char *mdata_video_keys[] = {"com.parrot.thermal.metaversion",
@@ -125,6 +125,16 @@ int main(int argc, char *argv[])
 	enum mp4_metadata_cover_type cover_type;
 
 	struct mp4_track_info info, video, audio;
+	struct mp4_mux_config config = {
+		.filename = out,
+		.filemode = 0,
+		.timescale = 30000,
+		.creation_time = now,
+		.modification_time = now,
+		.tables_size_mbytes = MP4_MUX_DEFAULT_TABLE_SIZE_MB,
+		.recovery.link_file = NULL,
+		.recovery.tables_file = NULL,
+	};
 
 	sample_buffer = malloc(sample_buffer_size);
 	if (sample_buffer == NULL) {
@@ -142,7 +152,8 @@ int main(int argc, char *argv[])
 		ULOG_ERRNO("mp4_demux_open", -ret);
 		goto out;
 	}
-	ret = mp4_mux_open(out, 30000, now, now, &mux);
+
+	ret = mp4_mux_open(&config, &mux);
 	if (ret != 0) {
 		ULOG_ERRNO("mp4_mux_open", -ret);
 		goto out;

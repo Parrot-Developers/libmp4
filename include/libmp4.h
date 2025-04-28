@@ -29,7 +29,10 @@
 #define _LIBMP4_H_
 
 #include <inttypes.h>
+#include <json-c/json.h>
+#include <stdbool.h>
 #include <stddef.h>
+#include <sys/types.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -73,6 +76,7 @@ extern "C" {
 #define MP4_META_KEY_SOFTWARE_VERSION "com.apple.quicktime.software"
 #define MP4_UDTA_KEY_SOFTWARE_VERSION "\251swr"
 
+#define MP4_MUX_DEFAULT_TABLE_SIZE_MB 2
 
 enum mp4_track_type {
 	MP4_TRACK_TYPE_UNKNOWN = 0,
@@ -214,6 +218,7 @@ struct mp4_video_decoder_config {
 
 struct mp4_track_sample {
 	uint32_t size;
+	uint64_t offset;
 	uint32_t metadata_size;
 	int silent;
 	int sync;
@@ -264,30 +269,80 @@ struct mp4_mux_scattered_sample {
 struct mp4_demux;
 
 
+/**
+ * Create an MP4 demuxer.
+ * The instance handle is returned through the mp4_demux parameter.
+ * When no longer needed, the instance must be freed using the
+ * mp4_demux_close() function.
+ * @param filename: file path to use
+ * @param ret_obj: demuxer instance handle (output)
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_demux_open(const char *filename, struct mp4_demux **ret_obj);
 
 
+/**
+ * Free an MP4 demuxer.
+ * This function frees all resources associated with a demuxer instance.
+ * @param demux: demuxer instance handle
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_demux_close(struct mp4_demux *demux);
 
 
+/**
+ * Get the media level information.
+ * @param demux: demuxer instance handle
+ * @param media_info: pointer to the media_info structure (output)
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_demux_get_media_info(struct mp4_demux *demux,
 				     struct mp4_media_info *media_info);
 
 
+/**
+ * Get the number of tracks of an MP4 demuxer.
+ * @param demux: demuxer instance handle
+ * @return the track count on success, negative errno value in case of error
+ */
 MP4_API int mp4_demux_get_track_count(struct mp4_demux *demux);
 
 
+/**
+ * Get the info of a specific track.
+ * @param demux: demuxer instance handle
+ * @param track_idx: track index
+ * @param track_info: pointer to the track_info structure to fill (output)
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_demux_get_track_info(struct mp4_demux *demux,
 				     unsigned int track_idx,
 				     struct mp4_track_info *track_info);
 
 
+/**
+ * Get the video decoder config of a specific track.
+ * @param demux: demuxer instance handle
+ * @param track_id: track ID
+ * @param vdc: pointer to the video_decoder_config structure to fill
+ * (output)
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int
 mp4_demux_get_track_video_decoder_config(struct mp4_demux *demux,
 					 unsigned int track_id,
 					 struct mp4_video_decoder_config *vdc);
 
 
+/**
+ * Get the audio config of a specific track.
+ * @param demux: demuxer instance handle
+ * @param track_id: track ID
+ * @param audio_specific_config: pointer to the audio specific config buffer
+ * (output)
+ * @param asc_size: pointer to the size of the audio specific config (output)
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int
 mp4_demux_get_track_audio_specific_config(struct mp4_demux *demux,
 					  unsigned int track_id,
@@ -295,6 +350,18 @@ mp4_demux_get_track_audio_specific_config(struct mp4_demux *demux,
 					  unsigned int *asc_size);
 
 
+/**
+ * Get a track sample.
+ * @param demux: demuxer instance handle
+ * @param track_id: track ID
+ * @param advance: if true, advance to the next sample of the track
+ * @param sample_buffer: sample buffer (optional, can be null)
+ * @param sample_buffer_size: sample buffer size
+ * @param metadata_buffer: metadata buffer (optional, can be null)
+ * @param metadata_buffer_size: size of the metadata buffer
+ * @param track_sample: pointer to the track_sample structure to fill (output)
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_demux_get_track_sample(struct mp4_demux *demux,
 				       unsigned int track_id,
 				       int advance,
@@ -305,16 +372,39 @@ MP4_API int mp4_demux_get_track_sample(struct mp4_demux *demux,
 				       struct mp4_track_sample *track_sample);
 
 
+/**
+ * Get the previous sample time of a track.
+ * @param demux: demuxer instance handle
+ * @param track_id: track ID
+ * @param sample_time: pointer to the sample time to fill (output)
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_demux_get_track_prev_sample_time(struct mp4_demux *demux,
 						 unsigned int track_id,
 						 uint64_t *sample_time);
 
 
+/**
+ * Get the next sample time of a track.
+ * @param demux: demuxer instance handle
+ * @param track_id: track ID
+ * @param sample_time: pointer to the sample time to fill (output)
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_demux_get_track_next_sample_time(struct mp4_demux *demux,
 						 unsigned int track_id,
 						 uint64_t *sample_time);
 
 
+/**
+ * Get the previous sample time of a track before a timestamp.
+ * @param demux: demuxer instance handle
+ * @param track_id: track ID
+ * @param time: timestamp
+ * @param sync: if true, search for a sync sample
+ * @param sample_time: pointer to the sample time to fill (output)
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_demux_get_track_prev_sample_time_before(struct mp4_demux *demux,
 							unsigned int track_id,
 							uint64_t time,
@@ -322,6 +412,15 @@ MP4_API int mp4_demux_get_track_prev_sample_time_before(struct mp4_demux *demux,
 							uint64_t *sample_time);
 
 
+/**
+ * Get the next sample time of a track before a timestamp.
+ * @param demux: demuxer instance handle
+ * @param track_id: track ID
+ * @param time: timestamp
+ * @param sync: if true, search for a sync sample
+ * @param sample_time (output): sample time
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_demux_get_track_next_sample_time_after(struct mp4_demux *demux,
 						       unsigned int track_id,
 						       uint64_t time,
@@ -329,31 +428,75 @@ MP4_API int mp4_demux_get_track_next_sample_time_after(struct mp4_demux *demux,
 						       uint64_t *sample_time);
 
 
+/**
+ * Seek to a time offset.
+ * @param demux: demuxer instance handle
+ * @param time_offset: timestamp
+ * @param method: seek method
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_demux_seek(struct mp4_demux *demux,
 			   uint64_t time_offset,
 			   enum mp4_seek_method method);
 
 
+/**
+ * Seek to the previous sample of a track.
+ * @param demux: demuxer instance handle
+ * @param track_id: track ID
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_demux_seek_to_track_prev_sample(struct mp4_demux *demux,
 						unsigned int track_id);
 
 
+/**
+ * Seek to the next sample of a track.
+ * @param demux: demuxer instance handle
+ * @param track_id: track ID
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_demux_seek_to_track_next_sample(struct mp4_demux *demux,
 						unsigned int track_id);
 
 
+/**
+ * Get the chapters of an MP4 file.
+ * @param demux: demuxer instance handle
+ * @param chapters_count: pointer to the chapters count to fill (output)
+ * @param chapters_time: pointer to chapters times array to fill (output)
+ * @param chapters_name: pointer to a chapters names array to fill (output)
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_demux_get_chapters(struct mp4_demux *demux,
 				   unsigned int *chapters_count,
 				   uint64_t **chapters_time,
 				   char ***chapters_name);
 
 
+/**
+ * Get the metadata strings of an MP4 file.
+ * @param demux: demuxer instance handle
+ * @param count: pointer to the metadata count to fill (output)
+ * @param keys: pointer to the metadata keys array to fill (output)
+ * @param values: pointer to the metadata values array to fill (output)
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_demux_get_metadata_strings(struct mp4_demux *demux,
 					   unsigned int *count,
 					   char ***keys,
 					   char ***values);
 
 
+/**
+ * Get the metadata strings of a track.
+ * @param demux: demuxer instance handle
+ * @param track_id: track ID
+ * @param count: pointer to the metadata count to fill (output)
+ * @param keys: pointer to the metadata keys array to fill (output)
+ * @param values: pointer to the metadata values array to fill (output)
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_demux_get_track_metadata_strings(struct mp4_demux *demux,
 						 unsigned int track_id,
 						 unsigned int *count,
@@ -361,6 +504,15 @@ MP4_API int mp4_demux_get_track_metadata_strings(struct mp4_demux *demux,
 						 char ***values);
 
 
+/**
+ * Get the metadata cover of an MP4 file.
+ * @param demux: demuxer instance handle
+ * @param cover_buffer: pointer to the cover data to fill (output)
+ * @param cover_buffer_size: cover buffer size
+ * @param cover_size: pointer to the cover data size to fill (output)
+ * @param cover_type: pointer to the cover type to fill (output)
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int
 mp4_demux_get_metadata_cover(struct mp4_demux *demux,
 			     uint8_t *cover_buffer,
@@ -373,43 +525,115 @@ mp4_demux_get_metadata_cover(struct mp4_demux *demux,
 
 struct mp4_mux;
 
-MP4_API int mp4_mux_open(const char *filename,
-			 uint32_t timescale,
-			 uint64_t creation_time,
-			 uint64_t modification_time,
+struct mp4_mux_config {
+	const char *filename;
+	mode_t filemode;
+	uint32_t timescale;
+	uint64_t creation_time;
+	uint64_t modification_time;
+	size_t tables_size_mbytes;
+	struct {
+		/* will be created by mp4_mux_open, must be deleted by caller
+		 * after calling mp4_mux_close */
+		const char *link_file;
+		/* will be created by mp4_mux_open, must be deleted by caller
+		 * after calling mp4_mux_close */
+		const char *tables_file;
+		bool check_storage_uuid;
+	} recovery;
+};
+
+
+/**
+ * Create an MP4 muxer.
+ * The instance handle is returned through the mp4_mux parameter.
+ * When no longer needed, the instance must be freed using the
+ * mp4_mux_close() function.
+ * @note mp4_recovery_finalize must be called after mp4_mux_close if recovery is
+ * enabled
+ * @param config: mp4_mux_config to use
+ * @param ret_obj: muxer instance handle (output)
+ * @return 0 on success, negative errno value in case of error
+ */
+MP4_API int mp4_mux_open(struct mp4_mux_config *config,
 			 struct mp4_mux **ret_obj);
 
-MP4_API int mp4_mux_open2(const char *filename,
-			  uint32_t timescale,
-			  uint64_t creation_time,
-			  uint64_t modification_time,
-			  uint32_t table_size_mbytes,
-			  struct mp4_mux **ret_obj);
+
+/**
+ * Sync an MP4 muxer.
+ * If recovery is enabled, this function must be called periodically to write
+ * the tables in the recovery files.
+ * If write_tables parameter is set to true, the tables are written in the final
+ * file (if recovery is enabled, tables will also be written in the recovery
+ * files).
+ * @note sync with write_tables allows the MP4 file to be read at any time but
+ * the operation requires to fully write the tables; sync without write_tables
+ * only writes the tables after the last call to mp4_mux_sync but requires a
+ * recovery with mp4_recovery_recover_file to read the MP4 file.
+ * @param mux: muxer instance handle
+ * @param write_tables: if true, tables are written in the final file.
+ * @return 0 on success, negative errno value in case of error
+ */
+MP4_API int mp4_mux_sync(struct mp4_mux *mux, bool write_tables);
 
 
-MP4_API int mp4_mux_sync(struct mp4_mux *mux);
-
-
+/**
+ * Free an MP4 muxer.
+ * This function frees all resources associated with a muxer instance.
+ * @param mux: muxer instance handle
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_mux_close(struct mp4_mux *mux);
 
 
+/**
+ * Add a track in an MP4 muxer.
+ * @param mux: muxer instance handle
+ * @param params: mp4_mux_track_params of the track to add
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_mux_add_track(struct mp4_mux *mux,
 			      const struct mp4_mux_track_params *params);
 
 
+/**
+ * Add a reference to a track.
+ * @param mux: muxer instance handle
+ * @param track_handle: track handle
+ * @param ref_track_handle: reference track handle
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_mux_add_ref_to_track(struct mp4_mux *mux,
-				     uint32_t track_id,
-				     uint32_t ref_track_id);
+				     uint32_t track_handle,
+				     uint32_t ref_track_handle);
 
 
+/**
+ * Set the video decoder config of a track.
+ * @param mux: muxer instance handle
+ * @param track_handle: track handle
+ * @param vdc: mp4_video_decoder_config to set
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int
 mp4_mux_track_set_video_decoder_config(struct mp4_mux *mux,
-				       int track_id,
+				       int track_handle,
 				       struct mp4_video_decoder_config *vdc);
 
 
+/**
+ * Set the audio specific config of a track.
+ * @param mux: muxer instance handle
+ * @param track_handle: track handle
+ * @param asc: buffer containing the audio specific config to set
+ * @param asc_size: size of the buffer containing the audio specific config
+ * @param channel_count: channel count
+ * @param sample_size: sample size
+ * @param sample_rate: sample rate
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_mux_track_set_audio_specific_config(struct mp4_mux *mux,
-						    int track_id,
+						    int track_handle,
 						    const uint8_t *asc,
 						    size_t asc_size,
 						    uint32_t channel_count,
@@ -417,45 +641,105 @@ MP4_API int mp4_mux_track_set_audio_specific_config(struct mp4_mux *mux,
 						    float sample_rate);
 
 
+/**
+ * Set the metadata mime type of a track.
+ * @param mux: muxer instance handle
+ * @param track_handle: track handle
+ * @param content_encoding: content encoding
+ * @param mime_type: mime type
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_mux_track_set_metadata_mime_type(struct mp4_mux *mux,
-						 int track_id,
+						 int track_handle,
 						 const char *content_encoding,
 						 const char *mime_type);
 
 
+/**
+ * Add a file level metadata.
+ * @param mux: muxer instance handle
+ * @param key: metadata key
+ * @param value: metadata value
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_mux_add_file_metadata(struct mp4_mux *mux,
 				      const char *key,
 				      const char *value);
 
 
+/**
+ * Add a track level metadata.
+ * @param mux: muxer instance handle
+ * @param track_handle: track handle
+ * @param key: metadata key
+ * @param value: metadata value
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_mux_add_track_metadata(struct mp4_mux *mux,
-				       uint32_t track_id,
+				       uint32_t track_handle,
 				       const char *key,
 				       const char *value);
 
 
+/**
+ * Set the cover of an MP4 file.
+ * @param mux: muxer instance handle
+ * @param cover_type: type of the cover
+ * @param cover: cover data
+ * @param cover_size: size of cover
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_mux_set_file_cover(struct mp4_mux *mux,
 				   enum mp4_metadata_cover_type cover_type,
 				   const uint8_t *cover,
 				   size_t cover_size);
 
 
+/**
+ * Add a sample to a track.
+ * @param mux: muxer instance handle
+ * @param track_handle: track handle
+ * @param sample: sample to add
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_mux_track_add_sample(struct mp4_mux *mux,
-				     int track_id,
+				     int track_handle,
 				     const struct mp4_mux_sample *sample);
 
 
+/**
+ * Add a scattered sample to a track.
+ * @param mux: muxer instance handle
+ * @param track_handle: track handle
+ * @param sample: sample to add
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_mux_track_add_scattered_sample(
 	struct mp4_mux *mux,
-	int track_id,
+	int track_handle,
 	const struct mp4_mux_scattered_sample *sample);
 
 
+/**
+ * Print the muxer data.
+ * @param mux: muxer instance handle
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API void mp4_mux_dump(struct mp4_mux *mux);
 
 
 /* Utilities */
 
+/**
+ * Create an avc decoder config.
+ * @param sps: buffer containing the sps
+ * @param sps_size: size of the buffer containing the sps
+ * @param pps: buffer containing the pps
+ * @param pps_size: size of the buffer containing the pps
+ * @param avcc: pointer to the avc decoder config buffer (output)
+ * @param avcc_size: pointer to the avc decoder config buffer size (output)
+ * @return 0 on success, negative errno value in case of error
+ */
 MP4_API int mp4_generate_avc_decoder_config(const uint8_t *sps,
 					    unsigned int sps_size,
 					    const uint8_t *pps,
@@ -464,15 +748,47 @@ MP4_API int mp4_generate_avc_decoder_config(const uint8_t *sps,
 					    unsigned int *avcc_size);
 
 
+/**
+ * Create a chapter sample.
+ * @param chapter_str: name of the chapter
+ * @param buffer: pointer to the chapter sample buffer (output)
+ * @param buffer_size: pointer to the chapter sample buffer size (output)
+ * @return 0 on success, negative errno value in case of error
+ */
+MP4_API int mp4_generate_chapter_sample(const char *chapter_str,
+					uint8_t **buffer,
+					unsigned int *buffer_size);
+
+
+/**
+ * Get a string from an enum mp4_track_type value.
+ * @param type: track type value to convert
+ * @return a string description of the track type
+ */
 MP4_API const char *mp4_track_type_str(enum mp4_track_type type);
 
 
+/**
+ * Get a string from an enum mp4_video_codec value.
+ * @param codec: video codec value to convert
+ * @return a string description of the video codec
+ */
 MP4_API const char *mp4_video_codec_str(enum mp4_video_codec codec);
 
 
+/**
+ * Get a string from an enum mp4_audio_codec value.
+ * @param codec: audio codec value to convert
+ * @return a string description of the audio codec
+ */
 MP4_API const char *mp4_audio_codec_str(enum mp4_audio_codec codec);
 
 
+/**
+ * Get a string from an enum mp4_metadata_cover_type value.
+ * @param type: metadata cover type value to convert
+ * @return a string description of the cover type
+ */
 MP4_API const char *
 mp4_metadata_cover_type_str(enum mp4_metadata_cover_type type);
 
@@ -501,6 +817,102 @@ static inline uint64_t mp4_convert_timescale(uint64_t time,
 		return time;
 	return (time * dest_timescale + src_timescale / 2) / src_timescale;
 }
+
+
+/**
+ * Convert an MP4 file to a json object
+ * @param filename: file path
+ * @param verbose: if true, print all the MP4 boxes
+ * @param json_obj: pointer to the json_object to fill (output)
+ * @return 0 on success, negative errno value in case of error
+ */
+MP4_API int mp4_file_to_json(const char *filename,
+			     bool verbose,
+			     struct json_object **json_obj);
+
+
+/* Recovery API */
+
+struct link_file_info {
+	char *tables_file;
+	char *data_file;
+	char *uuid;
+	size_t tables_size_b;
+	uint32_t recovery_version;
+};
+
+/**
+ * Fills a link_file_info structure from a link_file.
+ * @param link_file: link file path
+ * @param info: link_file_info structure to fill
+ * @return 0 on success, negative errno value in case of error
+ */
+MP4_API int mp4_recovery_parse_link_file(const char *link_file,
+					 struct link_file_info *info);
+
+/**
+ * Recovery function.
+ * Must be called after mp4_recovery_recover_file or after
+ * a call to mp4_mux_close.
+ * Remove the recovery files (link_file, tables_file)
+ * @param link_file: link file path used for recovery.
+ * @param truncate_file: if true, will truncate the media file to 0 byte.
+ * @return 0 on success, negative errno value in case of error
+ */
+MP4_API int mp4_recovery_finalize(const char *link_file, bool truncate_file);
+
+
+/**
+ * Clean up a link_file_info structure.
+ * @param info: the link_file_info structure to clean up
+ * @return 0 on success, negative errno value in case of error
+ */
+MP4_API int mp4_recovery_link_file_info_destroy(struct link_file_info *info);
+
+
+/**
+ * Recovery function.
+ * Use the link_file to find a data file (where mdat is written) and a
+ * tables file (where moov is written) and merge the two into a valid
+ * MP4 file.
+ * @param link_file: link file path to use for recovery.
+ * @param error_msg (output): required, unset on success, a string
+ * description of the failure, the string should be freed after usage
+ * @param recovered_file (output): path of the recovered file (optional), must
+ * be released by caller after use.
+
+ * @return 0 on success, negative errno value in case of error
+ */
+MP4_API
+int mp4_recovery_recover_file(const char *link_file,
+			      char **error_msg,
+			      char **recovered_file);
+
+
+/**
+ * Recovery function.
+ * Rewrite the link_file with the custom tables_file (where tables are written)
+ * and data_file (where mdat is written) parameters,
+ * and merge the two into a valid MP4 file.
+ * @param link_file: link file path to use for recovery.
+ * @param tables_file: custom table file path that will written in the link file
+ * before starting the recovery.
+ * @param data_file: custom table data path that will written in the link file
+ * before starting the recovery.
+ * @param error_msg (output): required, unset on success, a string
+ * description of the failure, the string should be freed after usage
+ * @param recovered_file (output): path of the recovered file (optional), must
+ * be released by caller after use.
+
+ * @return 0 on success, negative errno value in case of error
+ */
+MP4_API
+int mp4_recovery_recover_file_from_paths(const char *link_file,
+					 const char *tables_file,
+					 const char *data_file,
+					 char **error_msg,
+					 char **recovered_file);
+
 
 #ifdef __cplusplus
 }

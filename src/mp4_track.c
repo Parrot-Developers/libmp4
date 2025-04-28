@@ -89,6 +89,37 @@ int mp4_track_find_sample_by_time(struct mp4_track *track,
 			}
 		}
 		break;
+	case MP4_TIME_CMP_NEAREST: {
+		int min_idx = -1;
+		uint64_t delta_ts;
+		uint64_t prev_delta_ts = UINT64_MAX, min_delta_ts = UINT64_MAX;
+		if (start < 0)
+			start = 0;
+		if (start >= (int)track->sampleCount)
+			start = (int)track->sampleCount - 1;
+		for (i = start; i < (int)track->sampleCount; i++, is_sync = 0) {
+			if (sync) {
+				is_sync = mp4_track_is_sync_sample(
+					track, i, NULL);
+			}
+			if (sync && !is_sync)
+				continue;
+			delta_ts = llabs((int64_t)time -
+					 (int64_t)track->sampleDecodingTime[i]);
+			if (delta_ts < min_delta_ts) {
+				min_delta_ts = delta_ts;
+				min_idx = i;
+			}
+			if (prev_delta_ts < delta_ts)
+				break;
+			prev_delta_ts = delta_ts;
+		}
+		if (min_idx >= 0) {
+			idx = min_idx;
+			found = 1;
+		}
+		break;
+	}
 	case MP4_TIME_CMP_LT:
 	case MP4_TIME_CMP_LT_EQ:
 		if (start < 0)
@@ -312,6 +343,7 @@ void mp4_tracks_destroy(struct mp4_file *mp4)
 
 int mp4_tracks_build(struct mp4_file *mp4)
 {
+	int ret;
 	struct mp4_track *tk = NULL, *videoTk = NULL;
 	struct mp4_track *metaTk = NULL, *chapTk = NULL;
 	int videoTrackCount = 0, audioTrackCount = 0, hintTrackCount = 0;
@@ -484,8 +516,13 @@ int mp4_tracks_build(struct mp4_file *mp4)
 					chapName;
 				ssize_t count = read(mp4->fd, chapName, sz);
 				if (count == -1) {
-					ULOG_ERRNO("read", errno);
-					return -errno;
+					ret = -errno;
+					ULOG_ERRNO("read", -ret);
+					return ret;
+				} else if (count != (ssize_t)sz) {
+					ret = -ENODATA;
+					ULOG_ERRNO("read", -ret);
+					return ret;
 				}
 				readBytes += sz;
 				chapName[sz] = '\0';
