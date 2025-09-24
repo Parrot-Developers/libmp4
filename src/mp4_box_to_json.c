@@ -47,6 +47,23 @@ struct mp4_to_json_param {
 };
 
 
+static void clear_param_meta(struct mp4_to_json_param *param)
+{
+	if (param->meta.keys == NULL)
+		return;
+
+	for (size_t i = 0; i < param->meta.count; i++) {
+		free(param->meta.keys[i]);
+		free(param->meta.values[i]);
+	}
+	param->meta.count = 0;
+	free(param->meta.keys);
+	param->meta.keys = NULL;
+	free(param->meta.values);
+	param->meta.values = NULL;
+}
+
+
 /* Forward declarations */
 static int add_box_to_json(struct mp4_to_json_param *param);
 
@@ -70,6 +87,53 @@ static int uint_to_str(uint32_t str, char res[5])
 	(res)[0] = (char)((str >> (8 * 3)) & 0xff);
 	(res)[4] = '\0';
 	key_to_printable(res);
+	return 0;
+}
+
+
+static int json_add_hex_from_binary_data(uint16_t bin_data_size,
+					 const char *name,
+					 struct mp4_to_json_param *param,
+					 off_t *box_read_bytes)
+{
+	int ret = 0;
+	uint8_t *bin_data = NULL;
+	char *hex_data = NULL;
+	ssize_t count;
+
+	bin_data = malloc(bin_data_size + 1);
+	if (bin_data == NULL) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	count = read(param->file.fd, bin_data, bin_data_size);
+	if (count == -1) {
+		ret = -errno;
+		ULOG_ERRNO("read", -ret);
+		goto out;
+	} else if (count != bin_data_size) {
+		ret = -EIO;
+		ULOG_ERRNO("read", -ret);
+		goto out;
+	}
+	*box_read_bytes += count;
+	bin_data[bin_data_size] = '\0';
+
+	hex_data = malloc(bin_data_size * 2 + 1);
+	if (hex_data == NULL) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	for (size_t i = 0; i < bin_data_size; i++)
+		snprintf(hex_data + 2 * i, 3, "%02X", (bin_data[i]));
+	json_object_object_add(
+		param->box.json, name, json_object_new_string(hex_data));
+
+out:
+	free(bin_data);
+	free(hex_data);
 	return 0;
 }
 
@@ -349,6 +413,47 @@ static int read_ftyp_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 }
 
 
+static int read_pasp_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
+{
+	uint32_t val32;
+
+	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
+	json_object_object_add(param->box.json,
+			       "hSpacing",
+			       json_object_new_int64(ntohl(val32)));
+
+	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
+	json_object_object_add(param->box.json,
+			       "vSpacing",
+			       json_object_new_int64(ntohl(val32)));
+
+	return skip_rest_of_box(param, box_read_bytes);
+}
+
+
+static int read_btrt_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
+{
+	uint32_t val32;
+
+	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
+	json_object_object_add(param->box.json,
+			       "buffer_size",
+			       json_object_new_int64(ntohl(val32)));
+
+	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
+	json_object_object_add(param->box.json,
+			       "max_bitrate",
+			       json_object_new_int64(ntohl(val32)));
+
+	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
+	json_object_object_add(param->box.json,
+			       "average_bitrate",
+			       json_object_new_int64(ntohl(val32)));
+
+	return skip_rest_of_box(param, box_read_bytes);
+}
+
+
 static int read_meta_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 {
 	switch (param->parent.type) {
@@ -558,7 +663,18 @@ static int read_esds_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 			json_object_new_int64(audio_object_type));
 		free(audio_specific_config);
 	}
-	return read_container_box(param, box_read_bytes);
+
+	MP4_READ_8(param->file.fd, val8, *box_read_bytes);
+	json_object_object_add(
+		param->box.json, "SL_packet_tag", json_object_new_int(val8));
+	MP4_READ_8(param->file.fd, val8, *box_read_bytes);
+	json_object_object_add(
+		param->box.json, "SL_packet_size", json_object_new_int(val8));
+	MP4_READ_8(param->file.fd, val8, *box_read_bytes);
+	json_object_object_add(
+		param->box.json, "SL_packet_header", json_object_new_int(val8));
+
+	return skip_rest_of_box(param, box_read_bytes);
 }
 
 
@@ -1217,6 +1333,7 @@ static int read_elst_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 {
 	uint32_t val32;
 	uint32_t entry_count;
+	struct json_object *obj;
 
 	read_version_flags(param, box_read_bytes);
 	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
@@ -1224,6 +1341,27 @@ static int read_elst_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 	json_object_object_add(param->box.json,
 			       "entry_count",
 			       json_object_new_int64(entry_count));
+
+	json_arr = json_object_new_array();
+	json_object_object_add(param->box.json, "edit_list_table", json_arr);
+	for (size_t i = 0; i < entry_count; i++) {
+		obj = json_object_new_object();
+
+		MP4_READ_32(param->file.fd, val32, *box_read_bytes);
+		json_object_object_add(obj,
+				       "track_duration",
+				       json_object_new_int64(ntohl(val32)));
+
+		MP4_READ_32(param->file.fd, val32, *box_read_bytes);
+		json_object_object_add(
+			obj, "media_time", json_object_new_int64(ntohl(val32)));
+
+		MP4_READ_32(param->file.fd, val32, *box_read_bytes);
+		json_object_object_add(
+			obj, "media_rate", json_object_new_int64(ntohl(val32)));
+
+		json_object_array_add(json_arr, obj);
+	}
 
 	return skip_rest_of_box(param, box_read_bytes);
 }
@@ -1395,12 +1533,83 @@ static int read_avc1_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 }
 
 
+static int read_hvc1_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
+{
+	uint32_t val32;
+	uint16_t val16;
+	uint16_t data_reference_index;
+	float horizresolution, vertresolution;
+	uint16_t depth;
+	ssize_t count;
+	uint16_t frame_count;
+	char compressorname[32];
+
+	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
+	MP4_READ_16(param->file.fd, val16, *box_read_bytes);
+
+	MP4_READ_16(param->file.fd, val16, *box_read_bytes);
+	data_reference_index = ntohs(val16);
+	json_object_object_add(param->box.json,
+			       "data_reference_index",
+			       json_object_new_int64(data_reference_index));
+
+	for (size_t k = 0; k < 4; k++)
+		MP4_READ_32(param->file.fd, val32, *box_read_bytes);
+
+	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
+	json_object_object_add(
+		param->box.json,
+		"width",
+		json_object_new_int64((ntohl(val32) >> 16) & 0xFFFF));
+	json_object_object_add(param->box.json,
+			       "height",
+			       json_object_new_int64(ntohl(val32) & 0xFFFF));
+	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
+	horizresolution = (float)(ntohl(val32)) / 65536.;
+	json_object_object_add(param->box.json,
+			       "horizontal_resolution",
+			       json_object_new_double(horizresolution));
+
+	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
+	vertresolution = (float)(ntohl(val32)) / 65536.;
+	json_object_object_add(param->box.json,
+			       "vertical_resolution",
+			       json_object_new_double(vertresolution));
+
+	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
+
+	MP4_READ_16(param->file.fd, val16, *box_read_bytes);
+	frame_count = ntohs(val16);
+	json_object_object_add(param->box.json,
+			       "frame_count",
+			       json_object_new_int64(frame_count));
+	count = read(param->file.fd, compressorname, 32);
+	if (count == -1 || (off_t)count != 32) {
+		ULOG_ERRNO("read", errno);
+		return skip_rest_of_box(param, box_read_bytes);
+	}
+	*box_read_bytes += 32;
+	compressorname[31] = '\0';
+	json_object_object_add(param->box.json,
+			       "compressor_name",
+			       json_object_new_string(compressorname));
+
+	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
+	depth = (uint16_t)((ntohl(val32) >> 16) & 0xFFFF);
+	json_object_object_add(
+		param->box.json, "depth", json_object_new_int64(depth));
+
+	return read_container_box(param, box_read_bytes);
+}
+
+
 static int read_hvcc_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 {
 	uint32_t val32;
 	uint16_t val16;
 	uint8_t val8, nb_arrays;
 	uint8_t version;
+	int err = 0;
 
 	MP4_READ_8(param->file.fd, version, *box_read_bytes);
 	if (version != 1)
@@ -1507,7 +1716,6 @@ static int read_hvcc_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 	bool first_vps = true;
 	bool first_pps = true;
 	bool first_sps = true;
-	bool first_all = true;
 	for (int i = 0; i < nb_arrays; i++) {
 		uint8_t array_completeness, nalu_type;
 		uint16_t nb_nalus;
@@ -1537,16 +1745,11 @@ static int read_hvcc_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 				       json_object_new_int64(nb_nalus));
 
 		for (int j = 0; j < nb_nalus; j++) {
-			uint8_t *nalu_pptr = NULL;
 			uint16_t nalu_length;
 
 			MP4_READ_16(param->file.fd, val16, *box_read_bytes);
 			nalu_length = htons(val16);
-			json_object_object_add(
-				param->box.json,
-				"nalu_length",
-				json_object_new_int64(nalu_length));
-			nalu_pptr = NULL;
+
 			if (nalu_length) {
 				switch (nalu_type) {
 				case MP4_H265_NALU_TYPE_VPS:
@@ -1558,6 +1761,18 @@ static int read_hvcc_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 						"hevc_vps_size",
 						json_object_new_int64(
 							nalu_length));
+					err = json_add_hex_from_binary_data(
+						nalu_length,
+						"hevc_vps",
+						param,
+						box_read_bytes);
+					if (err < 0) {
+						ULOG_ERRNO(
+							"json_add_hex_from_"
+							"binary_data",
+							-err);
+						return err;
+					}
 					break;
 				case MP4_H265_NALU_TYPE_SPS:
 					if (!first_sps)
@@ -1568,6 +1783,18 @@ static int read_hvcc_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 						"hevc_sps_size",
 						json_object_new_int64(
 							nalu_length));
+					err = json_add_hex_from_binary_data(
+						nalu_length,
+						"hevc_sps",
+						param,
+						box_read_bytes);
+					if (err < 0) {
+						ULOG_ERRNO(
+							"json_add_hex_from_"
+							"binary_data",
+							-err);
+						return err;
+					}
 					break;
 				case MP4_H265_NALU_TYPE_PPS:
 					if (!first_pps)
@@ -1578,6 +1805,18 @@ static int read_hvcc_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 						"hevc_pps_size",
 						json_object_new_int64(
 							nalu_length));
+					err = json_add_hex_from_binary_data(
+						nalu_length,
+						"hevc_pps",
+						param,
+						box_read_bytes);
+					if (err < 0) {
+						ULOG_ERRNO(
+							"json_add_hex_from_"
+							"binary_data",
+							-err);
+						return err;
+					}
 					break;
 				default:
 					json_object_object_add(
@@ -1596,35 +1835,7 @@ static int read_hvcc_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 					break;
 				}
 			}
-			if (first_all) {
-				first_all = false;
-				nalu_pptr =
-					calloc(nalu_length, sizeof(uint8_t));
-				if (nalu_pptr == NULL) {
-					ULOG_ERRNO("calloc", ENOMEM);
-					free(nalu_pptr);
-					return skip_rest_of_box(param,
-								box_read_bytes);
-				}
-				ssize_t count = read(
-					param->file.fd, nalu_pptr, nalu_length);
-				if (count == -1 || count != nalu_length) {
-					ULOG_ERRNO("fread", errno);
-					free(nalu_pptr);
-					return skip_rest_of_box(param,
-								box_read_bytes);
-				}
-			} else {
-				off_t ret = lseek(
-					param->file.fd, nalu_length, SEEK_CUR);
-				if (ret == -1) {
-					ULOG_ERRNO("lseek", errno);
-					return skip_rest_of_box(param,
-								box_read_bytes);
-				}
-			}
 			*box_read_bytes += nalu_length;
-			free(nalu_pptr);
 		}
 	}
 
@@ -1642,6 +1853,7 @@ static int read_avcc_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 	uint8_t profile = (val32 >> 16) & 0xFF;
 	uint8_t profile_compat = (val32 >> 8) & 0xFF;
 	uint8_t level = val32 & 0xFF;
+	int err = 0;
 
 	json_object_object_add(param->box.json,
 			       "configuration_version",
@@ -1669,18 +1881,12 @@ static int read_avcc_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 	json_object_object_add(param->box.json,
 			       "sequence_parameter_length",
 			       json_object_new_int64(val16));
-	char *arr = malloc(val16 + 1);
-	ssize_t count = read(param->file.fd, arr, val16);
-	if (count == -1) {
-		ULOG_ERRNO("read", errno);
-		free(arr);
-		return -errno;
+	err = json_add_hex_from_binary_data(
+		val16, "sequence_parameter", param, box_read_bytes);
+	if (err < 0) {
+		ULOG_ERRNO("json_add_hex_from_binary_data", -err);
+		return err;
 	}
-	*box_read_bytes += count;
-	arr[val16] = '\0';
-	json_object_object_add(
-		param->box.json, "sequence_param", json_object_new_string(arr));
-	free(arr);
 	if (lseek(param->file.fd, 1, SEEK_CUR) == -1)
 		return -errno;
 	(*box_read_bytes)++;
@@ -1690,27 +1896,105 @@ static int read_avcc_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 	json_object_object_add(param->box.json,
 			       "picture_parameter_length",
 			       json_object_new_int64(val16));
-	char *arr2 = malloc(val16 + 1);
-	count = read(param->file.fd, arr2, val16);
-	if (count == -1) {
-		ULOG_ERRNO("read", errno);
-		free(arr2);
-		return -errno;
+	err = json_add_hex_from_binary_data(
+		val16, "picture_parameter", param, box_read_bytes);
+	if (err < 0) {
+		ULOG_ERRNO("json_add_hex_from_binary_data", -err);
+		return err;
 	}
-	*box_read_bytes += count;
-	arr2[val16] = '\0';
-	json_object_object_add(
-		param->box.json, "picture_param", json_object_new_string(arr2));
-	free(arr2);
 
 	return skip_rest_of_box(param, box_read_bytes);
 }
 
 
+static int read_ilst_meta_box(struct mp4_to_json_param *param,
+			      off_t *box_read_bytes,
+			      struct json_object *metadata)
+{
+	uint32_t val32;
+	uint32_t index;
+	uint32_t length;
+	ssize_t count;
+	char name[5];
+
+	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
+	length = ntohl(val32);
+	if (length < 24) {
+		ULOGE("invalid length: %" PRIu32 ", expected %d min",
+		      length,
+		      24);
+		goto out;
+	}
+	length -= 24;
+
+	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
+	index = ntohl(val32);
+	if (index < 1)
+		goto out;
+	index -= 1;
+	if (index > param->meta.count)
+		goto out;
+
+	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
+	json_object_object_add(
+		metadata, "size", json_object_new_int(ntohl(val32)));
+	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
+	(void)uint_to_str(ntohl(val32), name);
+	json_object_object_add(
+		metadata, "sub-box_type", json_object_new_string(name));
+	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
+	json_object_object_add(metadata,
+			       "sub-box_data_type",
+			       json_object_new_int(ntohl(val32)));
+	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
+	json_object_object_add(
+		metadata, "sub-box_locale", json_object_new_int(ntohl(val32)));
+
+	if (param->meta.values == NULL) {
+		ULOGE("no meta values");
+		return skip_rest_of_box(param, box_read_bytes);
+	}
+	param->meta.values[index] = calloc(length, sizeof(*param->meta.values));
+	if (param->meta.values[index] == NULL) {
+		ULOGE("calloc");
+		return skip_rest_of_box(param, box_read_bytes);
+	}
+	count = read(param->file.fd, param->meta.values[index], length);
+	if (count == -1 || count != (ssize_t)length) {
+		ULOG_ERRNO("read", errno);
+		goto out;
+	}
+	*box_read_bytes += length;
+
+out:
+	return 0;
+}
+
+
 static int read_ilst_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 {
-	if (param->box.track_type == MP4_TRACK_TYPE_METADATA)
-		return skip_rest_of_box(param, box_read_bytes);
+	struct json_object *metadata;
+
+	if (param->box.track_type == MP4_TRACK_TYPE_METADATA) {
+		json_arr = json_object_new_array();
+		for (size_t i = 0; i < param->meta.count; i++) {
+			metadata = json_object_new_object();
+			read_ilst_meta_box(param, box_read_bytes, metadata);
+			/* key is not present in ilst box */
+			json_object_object_add(
+				metadata,
+				"(key)",
+				json_object_new_string(param->meta.keys[i]));
+			json_object_object_add(
+				metadata,
+				"value",
+				json_object_new_string(param->meta.values[i]));
+			json_object_array_add(json_arr, metadata);
+		}
+		json_object_object_add(param->box.json, "data_vals", json_arr);
+
+		return 0;
+	}
 
 	return read_container_box(param, box_read_bytes);
 }
@@ -1793,6 +2077,21 @@ static int read_keys_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 	if (metadata_count == 0)
 		goto skip;
 	json_arr = json_object_new_array();
+
+	clear_param_meta(param);
+
+	param->meta.count = metadata_count;
+	param->meta.keys = calloc(param->meta.count, sizeof(*param->meta.keys));
+	if (param->meta.keys == NULL) {
+		ULOGE("calloc");
+		goto skip;
+	}
+	param->meta.values =
+		calloc(param->meta.count, sizeof(*param->meta.values));
+	if (param->meta.values == NULL) {
+		ULOGE("calloc");
+		goto skip;
+	}
 	for (i = 0; i < metadata_count; i++) {
 		MP4_READ_32(param->file.fd, val32, *box_read_bytes);
 		key_size = ntohl(val32);
@@ -1829,6 +2128,7 @@ static int read_keys_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 			metadata, "key_size", json_object_new_int64(key_size));
 		*box_read_bytes += key_size;
 		metadata_key[key_size] = '\0';
+		param->meta.keys[i] = strdup(metadata_key);
 		json_object_object_add(metadata,
 				       "key_value",
 				       json_object_new_string(metadata_key));
@@ -1950,7 +2250,7 @@ static int read_mp4a_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 			       "audioSampleRate",
 			       json_object_new_int64(ntohl(val32)));
 
-	return skip_rest_of_box(param, box_read_bytes);
+	return read_container_box(param, box_read_bytes);
 }
 
 
@@ -2056,6 +2356,7 @@ static const struct {
 	{MP4_SYNC_SAMPLE_BOX, &read_stss_box},
 	/* encoding / decoding */
 	{MP4_AVC1, &read_avc1_box},
+	{MP4_HVC1, &read_hvc1_box},
 	{MP4_HEVC_DECODER_CONFIG_BOX, &read_hvcc_box},
 	{MP4_AVC_DECODER_CONFIG_BOX, &read_avcc_box},
 	/* headers */
@@ -2072,6 +2373,8 @@ static const struct {
 	{MP4_FILE_TYPE_BOX, &read_ftyp_box},
 	{MP4_DATA_REFERENCE_BOX, &read_dref_box},
 	{MP4_ELST, &read_elst_box},
+	{MP4_PASP, &read_pasp_box},
+	{MP4_BTRT, &read_btrt_box},
 	{MP4_TRACK_REFERENCE_BOX, &read_tref_box},
 	{MP4_HANDLER_REFERENCE_BOX, &read_hdlr_box},
 	{MP4_KEYS_BOX, &read_keys_box},
@@ -2079,7 +2382,6 @@ static const struct {
 	{MP4_ISOM, &read_ilst_box_child},
 	{MP4_ISO2, &read_ilst_box_child},
 	{MP4_MP41, &read_ilst_box_child},
-	{MP4_HVC1, &read_ilst_box_child},
 	{MP4_MHLR, &read_ilst_box_child},
 	{MP4_REFERENCE_TYPE_DESCRIPTION, &read_ilst_box_child},
 	{MP4_REFERENCE_TYPE_HINT_USED, &read_ilst_box_child},
@@ -2245,13 +2547,8 @@ out:
 		json_object_put(param->mp4.root);
 	if (param->file.fd != -1)
 		close(param->file.fd);
-	if (param->meta.keys != NULL) {
-		for (size_t i = 0; i < param->meta.count; i++)
-			free(param->meta.keys[i]);
-		free(param->meta.keys);
-	}
-	if (param->meta.values != NULL)
-		free(param->meta.values);
+
+	clear_param_meta(param);
 	free(param);
 	return ret;
 }

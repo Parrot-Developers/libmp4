@@ -35,8 +35,7 @@
 /* Enable to log all table entries */
 #define LOG_ALL 0
 
-#define MAX_BOX_SIZE (10 * 1024 * 1024)
-#define MAX_ENTRY_COUNT (10 * 1024 * 1024)
+#define MAX_ENTRY_COUNT (10000000)
 
 
 #define CHECK_SIZE(_max, _expected)                                            \
@@ -1212,13 +1211,6 @@ mp4_box_hvcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 					ULOGD("- hvcC:         ignoring NALU "
 					      "(type = %u)",
 					      nalu_type);
-					/* Ignore any other NALU */
-					off_t ret = lseek(
-						mp4->fd, nalu_length, SEEK_CUR);
-					if (ret == -1) {
-						ULOG_ERRNO("lseek", errno);
-						return -errno;
-					}
 					break;
 				}
 			}
@@ -2299,7 +2291,7 @@ static int mp4_ilst_sub_box_count(struct mp4_file *mp4,
 			realBoxSize = (uint64_t)ntohl(val32) << 32;
 			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			realBoxSize |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
-			if (realBoxSize > MAX_BOX_SIZE) {
+			if (realBoxSize > (mp4->fileSize - mp4->readBytes)) {
 				ULOGE("realBoxSize exceeds maximum size %ld",
 				      (long)realBoxSize);
 				return -EPROTO;
@@ -2720,8 +2712,12 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		}
 
 		if (realBoxSize < boxReadBytes ||
-		    realBoxSize - boxReadBytes > MAX_BOX_SIZE)
+		    realBoxSize - boxReadBytes >
+			    (mp4->fileSize - mp4->readBytes)) {
+			ULOGE("size to read exceeds maximum size %ld",
+			      (long)(realBoxSize - boxReadBytes));
 			goto skip_box;
+		}
 
 		switch (box->type) {
 		case MP4_UUID: {
@@ -2939,7 +2935,8 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			if ((parent->parent) &&
 			    (parent->parent->type == MP4_USER_DATA_BOX)) {
 				if (realBoxSize - boxReadBytes < 0 ||
-				    realBoxSize - boxReadBytes > MAX_BOX_SIZE) {
+				    realBoxSize - boxReadBytes >
+					    (mp4->fileSize - mp4->readBytes)) {
 					ULOGE("ilst box size exceeds maximum "
 					      "size (%ld)",
 					      (long)(realBoxSize -
@@ -2998,7 +2995,8 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 			break;
 		}
 		case MP4_DATA_BOX: {
-			if (realBoxSize - boxReadBytes > MAX_BOX_SIZE) {
+			if (realBoxSize - boxReadBytes >
+			    (mp4->fileSize - mp4->readBytes)) {
 				ULOGE("meta data box size exceeds maximum "
 				      "size (%ld)",
 				      (long)(realBoxSize - boxReadBytes));

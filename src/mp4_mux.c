@@ -460,7 +460,7 @@ error:
 }
 
 
-MP4_API int mp4_mux_open(struct mp4_mux_config *config,
+MP4_API int mp4_mux_open(const struct mp4_mux_config *config,
 			 struct mp4_mux **ret_obj)
 {
 	struct mp4_mux *mux = NULL;
@@ -469,6 +469,11 @@ MP4_API int mp4_mux_open(struct mp4_mux_config *config,
 	int ret = 0;
 	bool recovery_enabled = false;
 	mode_t mode;
+	int flags = O_WRONLY | O_CREAT;
+
+#ifdef O_BINARY
+	flags |= O_BINARY;
+#endif
 
 	ULOG_ERRNO_RETURN_ERR_IF(config == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(ret_obj == NULL, EINVAL);
@@ -500,7 +505,7 @@ MP4_API int mp4_mux_open(struct mp4_mux_config *config,
 	/* Default file mode: 0600 */
 	mode = config->filemode ? config->filemode : S_IRUSR | S_IWUSR;
 
-	mux->fd = open(mux->filename, O_WRONLY | O_CREAT, mode);
+	mux->fd = open(mux->filename, flags, mode);
 	if (mux->fd == -1) {
 		ret = -errno;
 		ULOG_ERRNO("open:'%s'", -ret, mux->filename);
@@ -565,7 +570,7 @@ MP4_API int mp4_mux_open(struct mp4_mux_config *config,
 		/* link file to link tables, data and uuid */
 		mux->recovery.link_file = strdup(config->recovery.link_file);
 		mux->recovery.fd_link =
-			open(mux->recovery.link_file, O_WRONLY | O_CREAT, 0600);
+			open(mux->recovery.link_file, flags, S_IRUSR | S_IWUSR);
 		if (mux->recovery.fd_link == -1) {
 			ret = -errno;
 			ULOG_ERRNO("open:'%s'", -ret, mux->recovery.link_file);
@@ -576,7 +581,7 @@ MP4_API int mp4_mux_open(struct mp4_mux_config *config,
 		mux->recovery.tables_file =
 			strdup(config->recovery.tables_file);
 		mux->recovery.fd_tables = open(
-			mux->recovery.tables_file, O_WRONLY | O_CREAT, 0600);
+			mux->recovery.tables_file, flags, S_IRUSR | S_IWUSR);
 		if (mux->recovery.fd_tables == -1) {
 			ret = -errno;
 			ULOG_ERRNO(
@@ -617,7 +622,13 @@ MP4_API int mp4_mux_open(struct mp4_mux_config *config,
 		return ret;
 	}
 #else
-	ULOGW("fsync not available, mp4 file not sync'ed on disk");
+	errno = 0;
+	ret = _commit(mux->fd);
+	if (ret < 0) {
+		ret = (errno != 0) ? -errno : -EIO;
+		ULOG_ERRNO("_commit", -ret);
+		return ret;
+	}
 #endif
 	return ret;
 error:
@@ -1197,7 +1208,13 @@ static int mp4_mux_sync_internal(struct mp4_mux *mux, bool allow_boxes_after)
 	if (ret != 0)
 		return -errno;
 #else
-	ULOGW("fsync not available, mp4 file not sync'ed on disk");
+	errno = 0;
+	ret = _commit(mux->fd);
+	if (ret < 0) {
+		ret = (errno != 0) ? -errno : -EIO;
+		ULOG_ERRNO("_commit", -ret);
+		return ret;
+	}
 #endif
 
 out:
@@ -1648,6 +1665,8 @@ MP4_API int mp4_mux_track_add_sample(struct mp4_mux *mux,
 	ULOG_ERRNO_RETURN_ERR_IF(mux == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(track_handle == 0, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(sample == NULL, EINVAL);
+	ULOG_ERRNO_RETURN_ERR_IF(sample->buffer == NULL, EINVAL);
+	ULOG_ERRNO_RETURN_ERR_IF(sample->len == 0, EINVAL);
 
 	const struct mp4_mux_scattered_sample sample_ = {
 		.buffers = &sample->buffer,
@@ -1676,6 +1695,9 @@ MP4_API int mp4_mux_track_add_scattered_sample(
 	ULOG_ERRNO_RETURN_ERR_IF(mux == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(track_handle == 0, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(sample == NULL, EINVAL);
+	ULOG_ERRNO_RETURN_ERR_IF(sample->nbuffers < 1, EINVAL);
+	ULOG_ERRNO_RETURN_ERR_IF(sample->buffers == NULL, EINVAL);
+	ULOG_ERRNO_RETURN_ERR_IF(sample->len == NULL, EINVAL);
 
 	iov = calloc(sample->nbuffers, sizeof(*iov));
 	if (!iov) {
@@ -1690,6 +1712,16 @@ MP4_API int mp4_mux_track_add_scattered_sample(
 		ULOG_ERRNO("mp4_mux_track_find_by_handle", -ret);
 		goto out;
 	}
+
+
+	if ((track->last_dts != 0) && (sample->dts <= track->last_dts)) {
+		ret = -EINVAL;
+		ULOGE("timestamp rollback from %" PRIi64 " to %" PRIi64,
+		      track->last_dts,
+		      sample->dts);
+		goto out;
+	}
+
 
 	for (int i = 0; i < sample->nbuffers; i++) {
 		iov[i].iov_base = (void *)sample->buffers[i];
@@ -1762,6 +1794,7 @@ MP4_API int mp4_mux_track_add_scattered_sample(
 	track->chunks.count++;
 	if (sample->sync && track->type == MP4_TRACK_TYPE_VIDEO)
 		track->sync.count++;
+	track->last_dts = sample->dts;
 
 out:
 	if (iov)

@@ -29,7 +29,7 @@
 
 static const struct {
 	const char *path;
-} nas_tests_mp4_utilities[] = {
+} assets_tests_mp4_utilities[] = {
 	{
 		"Tests/anafi/4k/video_recording/champs_1080p30.mp4",
 	},
@@ -97,12 +97,8 @@ static void test_mp4_utilities_mp4_to_json(void)
 	int res = 0;
 	struct json_object *json_obj;
 	char path[200];
-	snprintf(path,
-		 sizeof(path),
-		 "%s/%s",
-		 (getenv("ASSETS_ROOT") != NULL) ? getenv("ASSETS_ROOT")
-						 : ASSETS_ROOT,
-		 nas_tests_mp4_utilities[0].path);
+	GET_PATH(path, 0, assets_tests_mp4_utilities, path);
+
 
 	/* all null */
 	res = mp4_file_to_json(NULL, false, NULL);
@@ -116,14 +112,9 @@ static void test_mp4_utilities_mp4_to_json(void)
 	res = mp4_file_to_json(path, false, NULL);
 	CU_ASSERT_EQUAL(res, -EINVAL);
 
-	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(nas_tests_mp4_utilities);
+	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(assets_tests_mp4_utilities);
 	     i++) {
-		snprintf(path,
-			 sizeof(path),
-			 "%s/%s",
-			 (getenv("ASSETS_ROOT") != NULL) ? getenv("ASSETS_ROOT")
-							 : ASSETS_ROOT,
-			 nas_tests_mp4_utilities[i].path);
+		GET_PATH(path, i, assets_tests_mp4_utilities, path);
 
 		res = mp4_file_to_json(path, false, &json_obj);
 		CU_ASSERT_EQUAL(res, 0);

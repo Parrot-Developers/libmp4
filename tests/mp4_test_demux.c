@@ -27,7 +27,7 @@
 
 #include "mp4_test.h"
 
-static const char *chapters_240p[] = {
+static const char *const chapters_240p[] = {
 	"Start",	 "Disconnection", "Connection",	   "Takeoff",
 	"Disconnection", "Connection",	  "Disconnection", "Connection",
 	"Disconnection", "Connection",	  "Disconnection", "Connection",
@@ -114,7 +114,7 @@ static struct {
 	struct {
 		struct mp4_media_info media_info;
 		unsigned int chapters_count;
-		const char **chapter_names;
+		const char *const *chapter_names;
 		const struct meta_container *metas;
 		unsigned int meta_count;
 		unsigned int meta_to_find_count;
@@ -122,14 +122,14 @@ static struct {
 		enum mp4_metadata_cover_type cover_type;
 		bool test_all_samples;
 	} expected_results;
-} nas_tests_mp4_demux[] = {
+} assets_tests_mp4_demux[] = {
 	{
 		"Tests/anafi/4k/video_recording/champs_1080p30.mp4",
 		"",
 		{
 			.media_info.duration = 224917333,
 			.media_info.creation_time = 1527952380,
-			.media_info.modification_time = 1527952380,
+			.media_info.modification_time = 1527952605,
 			.media_info.track_count = 3,
 			.chapters_count = 0,
 			.chapter_names = NULL,
@@ -147,7 +147,7 @@ static struct {
 		{
 			.media_info.duration = 123584000,
 			.media_info.creation_time = 1538842372,
-			.media_info.modification_time = 1538842372,
+			.media_info.modification_time = 1538842496,
 			.media_info.track_count = 3,
 			.chapters_count = 0,
 			.chapter_names = NULL,
@@ -195,27 +195,25 @@ static struct {
 			.test_all_samples = false,
 		},
 	},
+	{
+		"Tests/miscellaneous/champs_240p_10bit.MP4",
+		"",
+		{
+			.media_info.duration = 16896000,
+			.media_info.creation_time = 0,
+			.media_info.modification_time = 0,
+			.media_info.track_count = 2,
+			.chapters_count = 0,
+			.chapter_names = NULL,
+			.metas = NULL,
+			.meta_count = 4,
+			.meta_to_find_count = 0,
+			.cover_size = 0,
+			.cover_type = MP4_METADATA_COVER_TYPE_UNKNOWN,
+			.test_all_samples = false,
+		},
+	},
 };
-
-
-static char *get_path(size_t index)
-{
-	if (index >= FUTILS_SIZEOF_ARRAY(nas_tests_mp4_demux))
-		return NULL;
-
-	if (nas_tests_mp4_demux[index].absolute_path[0] == '\0') {
-		snprintf(nas_tests_mp4_demux[index].absolute_path,
-			 sizeof(nas_tests_mp4_demux[index].absolute_path),
-			 "%s/%s",
-			 (getenv("ASSETS_ROOT") != NULL) ? getenv("ASSETS_ROOT")
-							 : ASSETS_ROOT,
-			 nas_tests_mp4_demux[index].relative_path);
-	}
-	int file_read_access =
-		access(nas_tests_mp4_demux[index].absolute_path, R_OK);
-	CU_ASSERT_FATAL(file_read_access == 0);
-	return nas_tests_mp4_demux[index].absolute_path;
-}
 
 
 static bool find_meta(const struct meta_container meta,
@@ -239,13 +237,13 @@ static bool find_meta(const struct meta_container meta,
 static void test_mp4_demux_get_track_next_sample_time_after(void)
 {
 	int res = 0;
-	char *path;
+	char path[200];
 	struct mp4_demux *demux;
 	struct mp4_track_info track_info;
 	uint64_t ts_sample = 0;
 	uint64_t time = 0;
 
-	path = get_path(0);
+	GET_PATH(path, 0, assets_tests_mp4_demux, relative_path);
 
 	(void)mp4_demux_open(path, &demux);
 
@@ -261,15 +259,16 @@ static void test_mp4_demux_get_track_next_sample_time_after(void)
 
 	(void)mp4_demux_close(demux);
 
-	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(nas_tests_mp4_demux); i++) {
-		path = get_path(i);
+	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(assets_tests_mp4_demux);
+	     i++) {
+		GET_PATH(path, i, assets_tests_mp4_demux, relative_path);
 
 		(void)mp4_demux_open(path, &demux);
 
 		/* invalid track id */
 		res = mp4_demux_get_track_next_sample_time_after(
 			demux,
-			nas_tests_mp4_demux[i]
+			assets_tests_mp4_demux[i]
 					.expected_results.media_info
 					.track_count +
 				1,
@@ -279,7 +278,7 @@ static void test_mp4_demux_get_track_next_sample_time_after(void)
 		CU_ASSERT_EQUAL(res, -ENOENT);
 
 		for (size_t j = 0;
-		     j < nas_tests_mp4_demux[i]
+		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {
 
@@ -299,13 +298,13 @@ static void test_mp4_demux_get_track_next_sample_time_after(void)
 static void test_mp4_demux_get_track_next_sample_time_before(void)
 {
 	int res = 0;
-	char *path;
+	char path[200];
 	struct mp4_demux *demux;
 	struct mp4_track_info track_info;
 	uint64_t ts_sample = 0;
 	uint64_t time = 0;
 
-	path = get_path(0);
+	GET_PATH(path, 0, assets_tests_mp4_demux, relative_path);
 
 	(void)mp4_demux_open(path, &demux);
 
@@ -321,15 +320,16 @@ static void test_mp4_demux_get_track_next_sample_time_before(void)
 
 	(void)mp4_demux_close(demux);
 
-	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(nas_tests_mp4_demux); i++) {
-		path = get_path(i);
+	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(assets_tests_mp4_demux);
+	     i++) {
+		GET_PATH(path, i, assets_tests_mp4_demux, relative_path);
 
 		(void)mp4_demux_open(path, &demux);
 
 		/* invalid track id */
 		res = mp4_demux_get_track_prev_sample_time_before(
 			demux,
-			nas_tests_mp4_demux[i]
+			assets_tests_mp4_demux[i]
 					.expected_results.media_info
 					.track_count +
 				1,
@@ -339,7 +339,7 @@ static void test_mp4_demux_get_track_next_sample_time_before(void)
 		CU_ASSERT_EQUAL(res, -ENOENT);
 
 		for (size_t j = 0;
-		     j < nas_tests_mp4_demux[i]
+		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {
 
@@ -360,7 +360,7 @@ static void test_mp4_demux_get_track_next_sample_time_before(void)
 static void test_mp4_demux_get_sample_time(void)
 {
 	int res = 0;
-	char *path;
+	char path[200];
 	struct mp4_demux *demux;
 	struct mp4_track_info track_info;
 	uint64_t ts_sample_0 = 0;
@@ -369,7 +369,7 @@ static void test_mp4_demux_get_sample_time(void)
 	uint64_t ts_sample_3 = 0;
 	uint64_t ts_sample_1_prev = 0;
 
-	path = get_path(0);
+	GET_PATH(path, 0, assets_tests_mp4_demux, relative_path);
 
 	(void)mp4_demux_open(path, &demux);
 
@@ -391,11 +391,12 @@ static void test_mp4_demux_get_sample_time(void)
 
 	(void)mp4_demux_close(demux);
 
-	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(nas_tests_mp4_demux); i++) {
-		path = get_path(i);
+	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(assets_tests_mp4_demux);
+	     i++) {
+		GET_PATH(path, i, assets_tests_mp4_demux, relative_path);
 
 		for (size_t j = 0;
-		     j < nas_tests_mp4_demux[i]
+		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {
 			/* need to open / close for each track since seek
@@ -404,7 +405,7 @@ static void test_mp4_demux_get_sample_time(void)
 
 			(void)mp4_demux_get_track_info(demux, j, &track_info);
 
-			if (!nas_tests_mp4_demux[i]
+			if (!assets_tests_mp4_demux[i]
 				     .expected_results.test_all_samples) {
 				(void)mp4_demux_close(demux);
 				continue;
@@ -419,7 +420,7 @@ static void test_mp4_demux_get_sample_time(void)
 			CU_ASSERT_EQUAL(res, 0);
 
 			(void)mp4_demux_seek_to_track_next_sample(
-				demux, track_info.id);
+				demux, track_info.id, false);
 
 			res = mp4_demux_get_track_next_sample_time(
 				demux, track_info.id, &ts_sample_2);
@@ -427,7 +428,7 @@ static void test_mp4_demux_get_sample_time(void)
 			CU_ASSERT(ts_sample_1 < ts_sample_2);
 
 			(void)mp4_demux_seek_to_track_next_sample(
-				demux, track_info.id);
+				demux, track_info.id, false);
 
 			res = mp4_demux_get_track_prev_sample_time(
 				demux, track_info.id, &ts_sample_1_prev);
@@ -445,15 +446,62 @@ static void test_mp4_demux_get_sample_time(void)
 }
 
 
+static void skip_silent_frames(struct mp4_demux *demux,
+			       struct mp4_track_info *track_info,
+			       unsigned int *silent_count,
+			       uint64_t *sample_time)
+{
+	int res;
+	int _silent_count = 0;
+	struct mp4_track_sample track_sample;
+
+	do {
+		res = mp4_demux_get_track_sample(demux,
+						 track_info->id,
+						 1,
+						 NULL,
+						 0,
+						 NULL,
+						 0,
+						 &track_sample);
+		if (res < 0)
+			break;
+		if (track_sample.silent)
+			_silent_count++;
+		else
+			break;
+	} while (true);
+
+	*silent_count = _silent_count;
+	*sample_time = mp4_sample_time_to_usec(track_sample.dts,
+					       track_info->timescale);
+}
+
+
 static void test_mp4_demux_seek(void)
 {
 	int res = 0;
-	char *path;
+	char path[200];
 	struct mp4_demux *demux;
 	struct mp4_track_info track_info;
-	uint64_t ts = 0;
+	uint64_t ts_ref, ts = 0;
+	uint64_t ts_before = 0, ts_after = 0;
+	uint64_t ts_before_sync = 0, ts_after_sync = 0;
 
-	path = get_path(0);
+	struct {
+		enum mp4_seek_method method;
+		int cmp;
+		bool is_sync;
+	} seek_methods[] = {
+		{MP4_SEEK_METHOD_PREVIOUS, -1, false},
+		{MP4_SEEK_METHOD_PREVIOUS_SYNC, -1, true},
+		{MP4_SEEK_METHOD_NEAREST, 0, false},
+		{MP4_SEEK_METHOD_NEAREST_SYNC, 0, true},
+		{MP4_SEEK_METHOD_NEXT, 1, false},
+		{MP4_SEEK_METHOD_NEXT_SYNC, 1, true},
+	};
+
+	GET_PATH(path, 0, assets_tests_mp4_demux, relative_path);
 
 	(void)mp4_demux_open(path, &demux);
 
@@ -471,11 +519,12 @@ static void test_mp4_demux_seek(void)
 
 	(void)mp4_demux_close(demux);
 
-	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(nas_tests_mp4_demux); i++) {
-		path = get_path(i);
+	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(assets_tests_mp4_demux);
+	     i++) {
+		GET_PATH(path, i, assets_tests_mp4_demux, relative_path);
 
 		for (size_t j = 0;
-		     j < nas_tests_mp4_demux[i]
+		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {
 			/* need to open / close for each track since seek
@@ -484,15 +533,130 @@ static void test_mp4_demux_seek(void)
 
 			(void)mp4_demux_get_track_info(demux, j, &track_info);
 
-			res = mp4_demux_get_track_next_sample_time(
-				demux, track_info.id, &ts);
-			CU_ASSERT_EQUAL(res, 0);
+			/* Test all seek methods */
+			for (size_t i = 0; i < SIZEOF_ARRAY(seek_methods);
+			     i++) {
 
-			res = mp4_demux_seek(
-				demux, ts, MP4_SEEK_METHOD_PREVIOUS);
-			CU_ASSERT_EQUAL(res, 0);
+				/* Test at several timestamps in track */
+				for (size_t j = 2; j < 10; j += 2) {
+					unsigned int silent_count = 0;
+					bool is_sync = seek_methods[i].is_sync;
 
-			if (!nas_tests_mp4_demux[i]
+					ts_ref = track_info.duration * j / 10;
+					/* FIXME: avoid exact match */
+					ts_ref -= 100;
+
+					/* Get prev_ts/next_ts */
+					/* codecheck_ignore[LONG_LINE] */
+					res = mp4_demux_get_track_prev_sample_time_before(
+						demux,
+						track_info.id,
+						ts_ref,
+						is_sync,
+						&ts_before);
+					CU_ASSERT_EQUAL(res, 0);
+					CU_ASSERT(ts_before <= ts_ref);
+
+					/* codecheck_ignore[LONG_LINE] */
+					res = mp4_demux_get_track_next_sample_time_after(
+						demux,
+						track_info.id,
+						ts_ref,
+						is_sync,
+						&ts_after);
+					CU_ASSERT_EQUAL(res, 0);
+					CU_ASSERT(ts_after >= ts_ref);
+					CU_ASSERT(ts_after >= ts_before);
+
+					res = mp4_demux_seek(
+						demux,
+						ts_ref,
+						seek_methods[i].method);
+					CU_ASSERT_EQUAL(res, 0);
+
+					/* codecheck_ignore[LONG_LINE] */
+					res = mp4_demux_get_track_next_sample_time(
+						demux, track_info.id, &ts);
+					CU_ASSERT_EQUAL(res, 0);
+
+					if (seek_methods[i].cmp < 0) {
+						CU_ASSERT(ts == ts_before);
+					} else if (seek_methods[i].cmp > 0) {
+						CU_ASSERT(ts == ts_after);
+					} else if (seek_methods[i].cmp == 0) {
+						if ((ts_after - ts) <
+						    (ts - ts_before))
+							CU_ASSERT(ts ==
+								  ts_after)
+						else
+							CU_ASSERT(ts ==
+								  ts_before)
+					}
+
+					/* Stop here when no sync is required */
+					if (!is_sync)
+						continue;
+
+					/* Process frames untill the first
+					 * non-silent sample is reached */
+					skip_silent_frames(demux,
+							   &track_info,
+							   &silent_count,
+							   &ts);
+
+					/* Get prev_ts/next_ts */
+					ts_before_sync = ts_before;
+					/* codecheck_ignore[LONG_LINE] */
+					res = mp4_demux_get_track_prev_sample_time_before(
+						demux,
+						track_info.id,
+						ts_ref,
+						0,
+						&ts_before);
+					CU_ASSERT_EQUAL(res, 0);
+					CU_ASSERT(ts_before <= ts_ref);
+
+					ts_after_sync = ts_after;
+					/* codecheck_ignore[LONG_LINE] */
+					res = mp4_demux_get_track_next_sample_time_after(
+						demux,
+						track_info.id,
+						ts_ref,
+						0,
+						&ts_after);
+					CU_ASSERT_EQUAL(res, 0);
+					CU_ASSERT(ts_after >= ts_ref);
+					CU_ASSERT(ts_after >= ts_before);
+
+					if (seek_methods[i].cmp < 0) {
+						CU_ASSERT(ts == ts_before);
+					} else if (seek_methods[i].cmp > 0) {
+						/* NEXT_SYNC => goto next sync,
+						 * no silent frames */
+						CU_ASSERT(ts == ts_after_sync)
+						CU_ASSERT_EQUAL(silent_count,
+								0);
+					} else if (seek_methods[i].cmp == 0) {
+						if ((ts_after_sync - ts) <
+						    (ts - ts_before_sync)) {
+							/* NEAREST_SYNC (next)
+							 * => goto next sync, no
+							 * silent frames
+							 */
+							CU_ASSERT(ts ==
+								  ts_after_sync)
+							CU_ASSERT_EQUAL(
+								silent_count,
+								0);
+						} else {
+							CU_ASSERT(ts ==
+								  ts_before)
+						}
+					}
+				}
+			}
+
+			if (!assets_tests_mp4_demux[i]
 				     .expected_results.test_all_samples) {
 				(void)mp4_demux_close(demux);
 				continue;
@@ -518,11 +682,14 @@ static void test_mp4_demux_seek(void)
 static void test_mp4_demux_seek_to_track_prev_sample(void)
 {
 	int res = 0;
-	char *path;
+	char path[200];
 	struct mp4_demux *demux;
 	struct mp4_track_info track_info;
+	unsigned int silent_count = 0;
+	uint64_t ts = 0;
+	uint64_t prev_ts = 0;
 
-	path = get_path(0);
+	GET_PATH(path, 0, assets_tests_mp4_demux, relative_path);
 
 	(void)mp4_demux_open(path, &demux);
 
@@ -530,33 +697,75 @@ static void test_mp4_demux_seek_to_track_prev_sample(void)
 	res = mp4_demux_seek_to_track_prev_sample(NULL, 0);
 	CU_ASSERT_EQUAL(res, -EINVAL);
 
-	/* first sample */
+	/* invalid track ID*/
 	res = mp4_demux_seek_to_track_prev_sample(demux, 0);
 	CU_ASSERT_EQUAL(res, -ENOENT);
 
 	(void)mp4_demux_close(demux);
 
-	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(nas_tests_mp4_demux); i++) {
-		path = get_path(i);
+	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(assets_tests_mp4_demux);
+	     i++) {
+		GET_PATH(path, i, assets_tests_mp4_demux, relative_path);
 
 		for (size_t j = 0;
-		     j < nas_tests_mp4_demux[i]
+		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {
+			silent_count = 0;
+			ts = 0;
+			prev_ts = 0;
+
 			/* need to open / close for each track since seek
 			 * affects all tracks */
 			(void)mp4_demux_open(path, &demux);
 
 			(void)mp4_demux_get_track_info(demux, j, &track_info);
 
-			if (!nas_tests_mp4_demux[i]
+			if (!assets_tests_mp4_demux[i]
 				     .expected_results.test_all_samples) {
 				(void)mp4_demux_close(demux);
 				continue;
 			}
 
-			(void)mp4_demux_seek_to_track_next_sample(
+			/* Seek at the end */
+			(void)mp4_demux_seek(
+				demux,
+				mp4_sample_time_to_usec(track_info.duration,
+							track_info.timescale),
+				MP4_SEEK_METHOD_PREVIOUS);
+
+			/* Start at N-2 to take into account the last frame */
+			for (int k = track_info.sample_count - 2; k >= 0; k--) {
+				/* Seek to previous sample */
+				res = mp4_demux_seek_to_track_prev_sample(
+					demux, track_info.id);
+				if (k <= 0) {
+					CU_ASSERT_EQUAL(res, -ENOENT);
+				} else {
+					CU_ASSERT_EQUAL(res, 0);
+
+					/* Process frames untill the first
+					 * non-silent sample is reached */
+					skip_silent_frames(demux,
+							   &track_info,
+							   &silent_count,
+							   &ts);
+					if (prev_ts != 0)
+						CU_ASSERT(ts < prev_ts);
+					prev_ts = ts;
+				}
+			}
+
+			res = mp4_demux_seek_to_track_prev_sample(
 				demux, track_info.id);
+			CU_ASSERT_EQUAL(res, -ENOENT);
+
+			/* Next/frame should work */
+			(void)mp4_demux_seek_to_track_next_sample(
+				demux, track_info.id, true);
+
+			skip_silent_frames(
+				demux, &track_info, &silent_count, &ts);
 
 			res = mp4_demux_seek_to_track_prev_sample(
 				demux, track_info.id);
@@ -571,43 +780,98 @@ static void test_mp4_demux_seek_to_track_prev_sample(void)
 static void test_mp4_demux_seek_to_track_next_sample(void)
 {
 	int res = 0;
-	char *path;
+	char path[200];
 	struct mp4_demux *demux;
 	struct mp4_track_info track_info;
+	unsigned int silent_count = 0;
+	uint64_t ts = 0;
+	uint64_t prev_ts = 0;
+
+	GET_PATH(path, 0, assets_tests_mp4_demux, relative_path);
+
+	(void)mp4_demux_open(path, &demux);
 
 	/* demux is null */
-	res = mp4_demux_seek_to_track_next_sample(NULL, 0);
+	res = mp4_demux_seek_to_track_next_sample(NULL, 0, false);
 	CU_ASSERT_EQUAL(res, -EINVAL);
 
-	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(nas_tests_mp4_demux); i++) {
-		path = get_path(i);
+	/* invalid track ID*/
+	res = mp4_demux_seek_to_track_next_sample(demux, 0, false);
+	CU_ASSERT_EQUAL(res, -ENOENT);
+
+	(void)mp4_demux_close(demux);
+
+	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(assets_tests_mp4_demux);
+	     i++) {
+		GET_PATH(path, i, assets_tests_mp4_demux, relative_path);
 
 		for (size_t j = 0;
-		     j < nas_tests_mp4_demux[i]
+		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {
+			silent_count = 0;
+			ts = 0;
+			prev_ts = 0;
+
 			/* need to open / close for each track since seek
 			 * affects all tracks */
 			(void)mp4_demux_open(path, &demux);
 
 			(void)mp4_demux_get_track_info(demux, j, &track_info);
 
-			res = mp4_demux_seek_to_track_next_sample(
-				demux, track_info.id);
-			CU_ASSERT_EQUAL(res, 0);
-
-			if (!nas_tests_mp4_demux[i]
+			if (!assets_tests_mp4_demux[i]
 				     .expected_results.test_all_samples) {
 				(void)mp4_demux_close(demux);
 				continue;
 			}
 
-			for (size_t k = 0; k < track_info.sample_count - 1;
+			for (size_t k = 0; k < track_info.sample_count + 1;
 			     k++) {
+				/* Seek to previous sample */
 				res = mp4_demux_seek_to_track_next_sample(
-					demux, track_info.id);
-				CU_ASSERT_EQUAL(res, 0);
+					demux, track_info.id, true);
+				if (k > track_info.sample_count - 1) {
+					CU_ASSERT_EQUAL(res, -ENOENT);
+				} else {
+					CU_ASSERT_EQUAL(res, 0);
+
+					/* Process frames untill the first
+					 * non-silent sample is reached */
+					skip_silent_frames(demux,
+							   &track_info,
+							   &silent_count,
+							   &ts);
+					if (prev_ts != 0)
+						CU_ASSERT(ts > prev_ts);
+					prev_ts = ts;
+				}
 			}
+
+			res = mp4_demux_seek_to_track_next_sample(
+				demux, track_info.id, true);
+			CU_ASSERT_EQUAL(res, -ENOENT);
+
+			/* Next/frame should work */
+			(void)mp4_demux_seek_to_track_prev_sample(
+				demux, track_info.id);
+
+			skip_silent_frames(
+				demux, &track_info, &silent_count, &ts);
+
+			res = mp4_demux_seek_to_track_next_sample(
+				demux, track_info.id, true);
+			CU_ASSERT_EQUAL(res, 0);
+
+			/* Next/frame should work */
+			(void)mp4_demux_seek_to_track_prev_sample(
+				demux, track_info.id);
+
+			skip_silent_frames(
+				demux, &track_info, &silent_count, &ts);
+
+			res = mp4_demux_seek_to_track_next_sample(
+				demux, track_info.id, false);
+			CU_ASSERT_EQUAL(res, 0);
 
 			(void)mp4_demux_close(demux);
 		}
@@ -618,12 +882,12 @@ static void test_mp4_demux_seek_to_track_next_sample(void)
 static void test_mp4_demux_get_track_sample(void)
 {
 	int res = 0;
-	char *path;
+	char path[200];
 	struct mp4_demux *demux;
 	struct mp4_track_info track_info;
 	struct mp4_track_sample track_sample;
 
-	path = get_path(0);
+	GET_PATH(path, 0, assets_tests_mp4_demux, relative_path);
 
 	(void)mp4_demux_open(path, &demux);
 
@@ -638,13 +902,14 @@ static void test_mp4_demux_get_track_sample(void)
 
 	(void)mp4_demux_close(demux);
 
-	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(nas_tests_mp4_demux); i++) {
-		path = get_path(i);
+	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(assets_tests_mp4_demux);
+	     i++) {
+		GET_PATH(path, i, assets_tests_mp4_demux, relative_path);
 
 		(void)mp4_demux_open(path, &demux);
 
 		for (size_t j = 0;
-		     j < nas_tests_mp4_demux[i]
+		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {
 			(void)mp4_demux_get_track_info(demux, j, &track_info);
@@ -659,7 +924,7 @@ static void test_mp4_demux_get_track_sample(void)
 							 &track_sample);
 			CU_ASSERT_EQUAL(res, 0);
 
-			if (!nas_tests_mp4_demux[i]
+			if (!assets_tests_mp4_demux[i]
 				     .expected_results.test_all_samples)
 				continue;
 
@@ -673,11 +938,10 @@ static void test_mp4_demux_get_track_sample(void)
 								 NULL,
 								 0,
 								 &track_sample);
-				if (k <= track_info.sample_count) {
-					CU_ASSERT_EQUAL(res, 0);
-				} else {
-					CU_ASSERT_EQUAL(res, -ENOENT);
-				}
+				CU_ASSERT_EQUAL(res,
+						(k <= track_info.sample_count)
+							? 0
+							: -ENOENT);
 			}
 		}
 
@@ -689,14 +953,14 @@ static void test_mp4_demux_get_track_sample(void)
 static void test_mp4_demux_get_metadata_cover(void)
 {
 	int res = 0;
-	char *path;
+	char path[200];
 	struct mp4_demux *demux;
 	uint8_t *cover_buffer = NULL;
 	unsigned int cover_buffer_size;
 	unsigned int cover_size;
 	enum mp4_metadata_cover_type cover_type;
 
-	path = get_path(0);
+	GET_PATH(path, 0, assets_tests_mp4_demux, relative_path);
 
 	(void)mp4_demux_open(path, &demux);
 
@@ -728,8 +992,9 @@ static void test_mp4_demux_get_metadata_cover(void)
 
 	free(cover_buffer);
 
-	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(nas_tests_mp4_demux); i++) {
-		path = get_path(i);
+	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(assets_tests_mp4_demux);
+	     i++) {
+		GET_PATH(path, i, assets_tests_mp4_demux, relative_path);
 
 		(void)mp4_demux_open(path, &demux);
 
@@ -748,10 +1013,10 @@ static void test_mp4_demux_get_metadata_cover(void)
 		CU_ASSERT_EQUAL(res, 0);
 		CU_ASSERT_EQUAL(
 			cover_size,
-			nas_tests_mp4_demux[i].expected_results.cover_size);
-		if (nas_tests_mp4_demux[i].expected_results.cover_size > 0) {
+			assets_tests_mp4_demux[i].expected_results.cover_size);
+		if (assets_tests_mp4_demux[i].expected_results.cover_size > 0) {
 			CU_ASSERT_EQUAL(cover_type,
-					nas_tests_mp4_demux[i]
+					assets_tests_mp4_demux[i]
 						.expected_results.cover_type);
 		}
 
@@ -765,14 +1030,14 @@ static void test_mp4_demux_get_metadata_cover(void)
 static void test_mp4_demux_get_metadata_strings(void)
 {
 	int res = 0;
-	char *path;
+	char path[200];
 	struct mp4_demux *demux;
 	unsigned int count;
 	char **keys;
 	char **values;
 	bool found_meta;
 
-	path = get_path(0);
+	GET_PATH(path, 0, assets_tests_mp4_demux, relative_path);
 
 	(void)mp4_demux_open(path, &demux);
 
@@ -794,8 +1059,9 @@ static void test_mp4_demux_get_metadata_strings(void)
 
 	(void)mp4_demux_close(demux);
 
-	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(nas_tests_mp4_demux); i++) {
-		path = get_path(i);
+	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(assets_tests_mp4_demux);
+	     i++) {
+		GET_PATH(path, i, assets_tests_mp4_demux, relative_path);
 
 		(void)mp4_demux_open(path, &demux);
 
@@ -803,15 +1069,15 @@ static void test_mp4_demux_get_metadata_strings(void)
 			demux, &count, &keys, &values);
 		CU_ASSERT_EQUAL(res, 0);
 		CU_ASSERT_EQUAL(
-			nas_tests_mp4_demux[i].expected_results.meta_count,
+			assets_tests_mp4_demux[i].expected_results.meta_count,
 			count);
 
 		for (size_t j = 0;
-		     j <
-		     nas_tests_mp4_demux[i].expected_results.meta_to_find_count;
+		     j < assets_tests_mp4_demux[i]
+				 .expected_results.meta_to_find_count;
 		     j++) {
 			found_meta =
-				find_meta(nas_tests_mp4_demux[i]
+				find_meta(assets_tests_mp4_demux[i]
 						  .expected_results.metas[j],
 					  count,
 					  keys,
@@ -827,14 +1093,14 @@ static void test_mp4_demux_get_metadata_strings(void)
 static void test_mp4_demux_get_track_metadata_strings(void)
 {
 	int res = 0;
-	char *path;
+	char path[200];
 	struct mp4_demux *demux;
 	unsigned int count;
 	char **keys;
 	char **values;
 	struct mp4_track_info track_info;
 
-	path = get_path(0);
+	GET_PATH(path, 0, assets_tests_mp4_demux, relative_path);
 
 	(void)mp4_demux_open(path, &demux);
 
@@ -860,15 +1126,16 @@ static void test_mp4_demux_get_track_metadata_strings(void)
 
 	(void)mp4_demux_close(demux);
 
-	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(nas_tests_mp4_demux); i++) {
-		path = get_path(i);
+	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(assets_tests_mp4_demux);
+	     i++) {
+		GET_PATH(path, i, assets_tests_mp4_demux, relative_path);
 
 		(void)mp4_demux_open(path, &demux);
 
 		/* invalid track_id */
 		res = mp4_demux_get_track_metadata_strings(
 			demux,
-			nas_tests_mp4_demux[i]
+			assets_tests_mp4_demux[i]
 					.expected_results.media_info
 					.track_count +
 				1,
@@ -878,7 +1145,7 @@ static void test_mp4_demux_get_track_metadata_strings(void)
 		CU_ASSERT_EQUAL(res, -ENOENT);
 
 		for (size_t j = 0;
-		     j < nas_tests_mp4_demux[i]
+		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {
 			(void)mp4_demux_get_track_info(demux, j, &track_info);
@@ -896,13 +1163,13 @@ static void test_mp4_demux_get_track_metadata_strings(void)
 static void test_mp4_demux_get_chapters(void)
 {
 	int res = 0;
-	char *path;
+	char path[200];
 	struct mp4_demux *demux;
 	unsigned int chapters_count;
 	uint64_t *chapters_time;
 	char **chapters_name;
 
-	path = get_path(0);
+	GET_PATH(path, 0, assets_tests_mp4_demux, relative_path);
 
 	(void)mp4_demux_open(path, &demux);
 
@@ -928,25 +1195,27 @@ static void test_mp4_demux_get_chapters(void)
 
 	(void)mp4_demux_close(demux);
 
-	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(nas_tests_mp4_demux); i++) {
-		path = get_path(i);
+	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(assets_tests_mp4_demux);
+	     i++) {
+		GET_PATH(path, i, assets_tests_mp4_demux, relative_path);
 
 		(void)mp4_demux_open(path, &demux);
 
 		res = mp4_demux_get_chapters(
 			demux, &chapters_count, &chapters_time, &chapters_name);
 		CU_ASSERT_EQUAL(res, 0);
-		CU_ASSERT_EQUAL(
-			chapters_count,
-			nas_tests_mp4_demux[i].expected_results.chapters_count);
+		CU_ASSERT_EQUAL(chapters_count,
+				assets_tests_mp4_demux[i]
+					.expected_results.chapters_count);
 
 		for (size_t j = 0;
 		     j < chapters_count &&
-		     j < nas_tests_mp4_demux[i].expected_results.chapters_count;
+		     j < assets_tests_mp4_demux[i]
+				     .expected_results.chapters_count;
 		     j++) {
 			CU_ASSERT_STRING_EQUAL(
 				chapters_name[j],
-				nas_tests_mp4_demux[i]
+				assets_tests_mp4_demux[i]
 					.expected_results.chapter_names[j]);
 		}
 
@@ -958,13 +1227,13 @@ static void test_mp4_demux_get_chapters(void)
 static void test_mp4_demux_get_track_audio_specific_config(void)
 {
 	int res = 0;
-	char *path;
+	char path[200];
 	struct mp4_demux *demux;
 	struct mp4_track_info track_info;
 	uint8_t *audio_specific_config;
 	unsigned int asc_size;
 
-	path = get_path(0);
+	GET_PATH(path, 0, assets_tests_mp4_demux, relative_path);
 
 	(void)mp4_demux_open(path, &demux);
 
@@ -979,15 +1248,16 @@ static void test_mp4_demux_get_track_audio_specific_config(void)
 
 	(void)mp4_demux_close(demux);
 
-	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(nas_tests_mp4_demux); i++) {
-		path = get_path(i);
+	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(assets_tests_mp4_demux);
+	     i++) {
+		GET_PATH(path, i, assets_tests_mp4_demux, relative_path);
 
 		(void)mp4_demux_open(path, &demux);
 
 		/* invalid track_idx */
 		res = mp4_demux_get_track_audio_specific_config(
 			demux,
-			nas_tests_mp4_demux[i]
+			assets_tests_mp4_demux[i]
 					.expected_results.media_info
 					.track_count +
 				1,
@@ -996,7 +1266,7 @@ static void test_mp4_demux_get_track_audio_specific_config(void)
 		CU_ASSERT_EQUAL(res, -ENOENT);
 
 		for (size_t j = 0;
-		     j < nas_tests_mp4_demux[i]
+		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {
 			(void)mp4_demux_get_track_info(demux, j, &track_info);
@@ -1020,12 +1290,12 @@ static void test_mp4_demux_get_track_audio_specific_config(void)
 static void test_mp4_demux_get_track_video_decoder_config(void)
 {
 	int res = 0;
-	char *path;
+	char path[200];
 	struct mp4_demux *demux;
 	struct mp4_track_info track_info;
 	struct mp4_video_decoder_config vdc;
 
-	path = get_path(0);
+	GET_PATH(path, 0, assets_tests_mp4_demux, relative_path);
 
 	(void)mp4_demux_open(path, &demux);
 
@@ -1043,15 +1313,16 @@ static void test_mp4_demux_get_track_video_decoder_config(void)
 
 	(void)mp4_demux_close(demux);
 
-	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(nas_tests_mp4_demux); i++) {
-		path = get_path(i);
+	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(assets_tests_mp4_demux);
+	     i++) {
+		GET_PATH(path, i, assets_tests_mp4_demux, relative_path);
 
 		(void)mp4_demux_open(path, &demux);
 
 		/* invalid track_idx */
 		res = mp4_demux_get_track_video_decoder_config(
 			demux,
-			nas_tests_mp4_demux[i]
+			assets_tests_mp4_demux[i]
 					.expected_results.media_info
 					.track_count +
 				1,
@@ -1059,7 +1330,7 @@ static void test_mp4_demux_get_track_video_decoder_config(void)
 		CU_ASSERT_EQUAL(res, -ENOENT);
 
 		for (size_t j = 0;
-		     j < nas_tests_mp4_demux[i]
+		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {
 			(void)mp4_demux_get_track_info(demux, j, &track_info);
@@ -1080,11 +1351,11 @@ static void test_mp4_demux_get_track_video_decoder_config(void)
 static void test_mp4_demux_get_track_info(void)
 {
 	int res = 0;
-	char *path;
+	char path[200];
 	struct mp4_demux *demux;
 	struct mp4_track_info track_info;
 
-	path = get_path(0);
+	GET_PATH(path, 0, assets_tests_mp4_demux, relative_path);
 
 	(void)mp4_demux_open(path, &demux);
 
@@ -1106,15 +1377,16 @@ static void test_mp4_demux_get_track_info(void)
 
 	(void)mp4_demux_close(demux);
 
-	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(nas_tests_mp4_demux); i++) {
-		path = get_path(i);
+	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(assets_tests_mp4_demux);
+	     i++) {
+		GET_PATH(path, i, assets_tests_mp4_demux, relative_path);
 
 		(void)mp4_demux_open(path, &demux);
 
 		/* invalid track_idx */
 		res = mp4_demux_get_track_info(
 			demux,
-			nas_tests_mp4_demux[i]
+			assets_tests_mp4_demux[i]
 					.expected_results.media_info
 					.track_count +
 				1,
@@ -1122,7 +1394,7 @@ static void test_mp4_demux_get_track_info(void)
 		CU_ASSERT_EQUAL(res, -ENOENT);
 
 		for (size_t j = 0;
-		     j < nas_tests_mp4_demux[i]
+		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {
 			res = mp4_demux_get_track_info(demux, j, &track_info);
@@ -1137,22 +1409,23 @@ static void test_mp4_demux_get_track_info(void)
 static void test_mp4_demux_get_track_count(void)
 {
 	int res = 0;
-	char *path;
+	char path[200];
 	struct mp4_demux *demux;
 
 	/* demux is null */
 	res = mp4_demux_get_track_count(NULL);
 	CU_ASSERT_EQUAL(res, -EINVAL);
 
-	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(nas_tests_mp4_demux); i++) {
-		path = get_path(i);
+	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(assets_tests_mp4_demux);
+	     i++) {
+		GET_PATH(path, i, assets_tests_mp4_demux, relative_path);
 
 		(void)mp4_demux_open(path, &demux);
 
 		res = mp4_demux_get_track_count(demux);
 		CU_ASSERT_EQUAL(
 			res,
-			nas_tests_mp4_demux[i]
+			assets_tests_mp4_demux[i]
 				.expected_results.media_info.track_count);
 
 		(void)mp4_demux_close(demux);
@@ -1164,10 +1437,10 @@ static void test_mp4_demux_get_media_info(void)
 {
 	int res = 0;
 	struct mp4_media_info media_info;
-	char *path;
+	char path[200];
 	struct mp4_demux *demux;
 
-	path = get_path(0);
+	GET_PATH(path, 0, assets_tests_mp4_demux, relative_path);
 
 	(void)mp4_demux_open(path, &demux);
 
@@ -1186,8 +1459,9 @@ static void test_mp4_demux_get_media_info(void)
 	(void)mp4_demux_close(demux);
 
 
-	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(nas_tests_mp4_demux); i++) {
-		path = get_path(i);
+	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(assets_tests_mp4_demux);
+	     i++) {
+		GET_PATH(path, i, assets_tests_mp4_demux, relative_path);
 
 		(void)mp4_demux_open(path, &demux);
 
@@ -1195,19 +1469,19 @@ static void test_mp4_demux_get_media_info(void)
 		CU_ASSERT_EQUAL(res, 0);
 
 		CU_ASSERT_EQUAL(media_info.duration,
-				nas_tests_mp4_demux[i]
+				assets_tests_mp4_demux[i]
 					.expected_results.media_info.duration);
 		CU_ASSERT_EQUAL(
 			media_info.creation_time,
-			nas_tests_mp4_demux[i]
+			assets_tests_mp4_demux[i]
 				.expected_results.media_info.creation_time);
 		CU_ASSERT_EQUAL(
 			media_info.modification_time,
-			nas_tests_mp4_demux[i]
+			assets_tests_mp4_demux[i]
 				.expected_results.media_info.modification_time);
 		CU_ASSERT_EQUAL(
 			media_info.track_count,
-			nas_tests_mp4_demux[i]
+			assets_tests_mp4_demux[i]
 				.expected_results.media_info.track_count);
 
 		(void)mp4_demux_close(demux);
@@ -1219,9 +1493,9 @@ static void test_mp4_demux_open_close(void)
 {
 	int res = 0;
 	struct mp4_demux *demux;
-	char *path;
+	char path[200];
 
-	path = get_path(0);
+	GET_PATH(path, 0, assets_tests_mp4_demux, relative_path);
 
 	/* both null */
 	res = mp4_demux_open(NULL, NULL);
@@ -1251,8 +1525,9 @@ static void test_mp4_demux_open_close(void)
 	res = mp4_demux_close(NULL);
 	CU_ASSERT_EQUAL(res, 0);
 
-	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(nas_tests_mp4_demux); i++) {
-		path = get_path(i);
+	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(assets_tests_mp4_demux);
+	     i++) {
+		GET_PATH(path, i, assets_tests_mp4_demux, relative_path);
 
 		res = mp4_demux_open(path, &demux);
 		CU_ASSERT_EQUAL(res, 0);

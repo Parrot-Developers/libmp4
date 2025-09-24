@@ -111,6 +111,8 @@
 #define MP4_LOCATION_BOX                    0xa978797a /* ".xyz" */
 #define MP4_EDTS_BOX                        0x65647473 /* "edts" */
 #define MP4_ELST                            0x656c7374 /* "elst" */
+#define MP4_PASP                            0x70617370 /* "pasp" */
+#define MP4_BTRT                            0x62747274 /* "btrt" */
 
 #define MP4_HANDLER_TYPE_VIDEO              0x76696465 /* "vide" */
 #define MP4_HANDLER_TYPE_AUDIO              0x736f756e /* "soun" */
@@ -409,6 +411,7 @@ struct mp4_mux_track {
 
 	struct list_node metadatas;
 	struct list_node node;
+	int64_t last_dts;
 };
 
 struct mp4_mux_metadata {

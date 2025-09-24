@@ -121,6 +121,7 @@ int mp4_demux_open(const char *filename, struct mp4_demux **ret_obj)
 	off_t retBytes;
 	struct mp4_demux *demux;
 	struct mp4_file *mp4;
+	int flags = O_RDONLY;
 
 	ULOG_ERRNO_RETURN_ERR_IF(filename == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(strlen(filename) == 0, EINVAL);
@@ -135,7 +136,10 @@ int mp4_demux_open(const char *filename, struct mp4_demux **ret_obj)
 	mp4 = &demux->mp4;
 	list_init(&mp4->tracks);
 
-	mp4->fd = open(filename, O_RDONLY);
+#ifdef O_BINARY
+	flags |= O_BINARY;
+#endif
+	mp4->fd = open(filename, flags);
 	if (mp4->fd == -1) {
 		ret = -errno;
 		ULOG_ERRNO("open:'%s'", -ret, filename);
@@ -234,11 +238,13 @@ int mp4_demux_close(struct mp4_demux *demux)
 }
 
 
-static int
-get_seek_sample(struct mp4_track *tk, int start, enum mp4_seek_method method)
+static int get_seek_sample(struct mp4_track *tk,
+			   int start,
+			   uint64_t requested_ts,
+			   enum mp4_seek_method method)
 {
-	int is_sync, prev_sync = -1, next_sync;
-	uint64_t ts = tk->sampleDecodingTime[start], prev_ts, next_ts;
+	int is_sync, prev_sync = -1, nearest, next, next_sync;
+	uint64_t start_ts = tk->sampleDecodingTime[start];
 
 	switch (method) {
 	case MP4_SEEK_METHOD_PREVIOUS:
@@ -251,36 +257,34 @@ get_seek_sample(struct mp4_track *tk, int start, enum mp4_seek_method method)
 			return prev_sync;
 		else
 			return -ENOENT;
-	case MP4_SEEK_METHOD_NEXT_SYNC:
-		is_sync = mp4_track_is_sync_sample(tk, start, &prev_sync);
-		next_sync = mp4_track_find_sample_by_time(
-			tk, ts, MP4_TIME_CMP_GT, 1, start);
-		if (is_sync)
-			return start;
-		else if (next_sync >= 0)
-			return next_sync;
+	case MP4_SEEK_METHOD_NEAREST:
+		nearest = mp4_track_find_sample_by_time(
+			tk, requested_ts, MP4_TIME_CMP_NEAREST, 0, start);
+		if (nearest >= 0)
+			return nearest;
 		else
 			return -ENOENT;
 	case MP4_SEEK_METHOD_NEAREST_SYNC:
-		is_sync = mp4_track_is_sync_sample(tk, start, &prev_sync);
-		next_sync = mp4_track_find_sample_by_time(
-			tk, ts, MP4_TIME_CMP_GT, 1, start);
-		if (is_sync) {
-			return start;
-		} else if (prev_sync >= 0 && next_sync >= 0) {
-			prev_ts = tk->sampleDecodingTime[prev_sync];
-			next_ts = tk->sampleDecodingTime[next_sync];
-			if (ts - prev_ts > next_ts - ts)
-				return next_sync;
-			else
-				return prev_sync;
-		} else if (prev_sync >= 0) {
-			return prev_sync;
-		} else if (next_sync >= 0) {
-			return next_sync;
-		} else {
+		nearest = mp4_track_find_sample_by_time(
+			tk, requested_ts, MP4_TIME_CMP_NEAREST, 1, start);
+		if (nearest >= 0)
+			return nearest;
+		else
 			return -ENOENT;
-		}
+	case MP4_SEEK_METHOD_NEXT:
+		next = mp4_track_find_sample_by_time(
+			tk, start_ts, MP4_TIME_CMP_GT, 0, start);
+		if (next >= 0)
+			return next;
+		else
+			return -ENOENT;
+	case MP4_SEEK_METHOD_NEXT_SYNC:
+		next_sync = mp4_track_find_sample_by_time(
+			tk, start_ts, MP4_TIME_CMP_GT, 1, start);
+		if (next_sync >= 0)
+			return next_sync;
+		else
+			return -ENOENT;
 	default:
 		ULOGE("unsupported seek method: %d", method);
 		return -EINVAL;
@@ -367,7 +371,7 @@ int mp4_demux_seek(struct mp4_demux *demux,
 			start++;
 		for (i = start; i >= 0; i--) {
 			if (tk->sampleDecodingTime[i] <= ts) {
-				idx = get_seek_sample(tk, i, method);
+				idx = get_seek_sample(tk, i, ts, method);
 				if (idx < 0)
 					break;
 				newPendingSeekTime =
@@ -411,9 +415,13 @@ int mp4_demux_get_media_info(struct mp4_demux *demux,
 	media_info->duration =
 		mp4_sample_time_to_usec(mp4->duration, mp4->timescale);
 	media_info->creation_time =
-		mp4->creationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET;
+		(mp4->creationTime >= MP4_MAC_TO_UNIX_EPOCH_OFFSET)
+			? mp4->creationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET
+			: mp4->creationTime;
 	media_info->modification_time =
-		mp4->creationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET;
+		(mp4->modificationTime >= MP4_MAC_TO_UNIX_EPOCH_OFFSET)
+			? mp4->modificationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET
+			: mp4->modificationTime;
 	media_info->track_count = mp4->trackCount;
 
 	return 0;
@@ -458,9 +466,13 @@ int mp4_demux_get_track_info(struct mp4_demux *demux,
 	track_info->timescale = tk->timescale;
 	track_info->duration = tk->duration;
 	track_info->creation_time =
-		tk->creationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET;
+		(tk->creationTime >= MP4_MAC_TO_UNIX_EPOCH_OFFSET)
+			? tk->creationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET
+			: tk->creationTime;
 	track_info->modification_time =
-		tk->creationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET;
+		(tk->modificationTime >= MP4_MAC_TO_UNIX_EPOCH_OFFSET)
+			? tk->modificationTime - MP4_MAC_TO_UNIX_EPOCH_OFFSET
+			: tk->modificationTime;
 	track_info->sample_count = tk->sampleCount;
 	track_info->sample_max_size = tk->sampleMaxSize;
 	track_info->sample_offsets = tk->sampleOffset;
@@ -744,6 +756,9 @@ int mp4_demux_seek_to_track_prev_sample(struct mp4_demux *demux,
 		return -ENOENT;
 	}
 
+	if (tk->nextSample == 1)
+		return -ENOENT;
+
 	idx = (tk->nextSample >= 2) ? tk->nextSample - 2 : 0;
 	ts = mp4_sample_time_to_usec(tk->sampleDecodingTime[idx],
 				     tk->timescale);
@@ -753,7 +768,8 @@ int mp4_demux_seek_to_track_prev_sample(struct mp4_demux *demux,
 
 
 int mp4_demux_seek_to_track_next_sample(struct mp4_demux *demux,
-					unsigned int track_id)
+					unsigned int track_id,
+					bool resync)
 {
 	struct mp4_file *mp4;
 	struct mp4_track *tk = NULL;
@@ -770,11 +786,23 @@ int mp4_demux_seek_to_track_next_sample(struct mp4_demux *demux,
 		return -ENOENT;
 	}
 
-	idx = (tk->nextSample < tk->sampleCount - 1) ? tk->nextSample + 1 : 0;
+	if (resync) {
+		if (tk->nextSample >= tk->sampleCount)
+			return -ENOENT;
+		idx = tk->nextSample;
+	} else {
+		if (tk->nextSample >= tk->sampleCount - 1)
+			return -ENOENT;
+		idx = tk->nextSample + 1;
+	}
+
 	ts = mp4_sample_time_to_usec(tk->sampleDecodingTime[idx],
 				     tk->timescale);
 
-	return mp4_demux_seek(demux, ts, MP4_SEEK_METHOD_PREVIOUS);
+	if (resync)
+		return mp4_demux_seek(demux, ts, MP4_SEEK_METHOD_PREVIOUS_SYNC);
+	else
+		return mp4_demux_seek(demux, ts, MP4_SEEK_METHOD_PREVIOUS);
 }
 
 

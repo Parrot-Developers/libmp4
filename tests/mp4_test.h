@@ -34,20 +34,42 @@
 #include <CUnit/Basic.h>
 #include <CUnit/CUnit.h>
 
+#include "mp4_priv.h"
 #include <errno.h>
+#include <futils/futils.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <futils/futils.h>
 #include <unistd.h>
 
+/* codecheck_ignore[COMPLEX_MACRO] */
 #define FN(_name) (char *)_name
 
+#define GET_PATH(_dest, _index, _array, _type)                                 \
+	do {                                                                   \
+		CU_ASSERT_FATAL(_index < FUTILS_SIZEOF_ARRAY(_array));         \
+		snprintf(_dest,                                                \
+			 sizeof(_dest),                                        \
+			 "%s/%s",                                              \
+			 (getenv("ASSETS_ROOT") != NULL)                       \
+				 ? getenv("ASSETS_ROOT")                       \
+				 : ASSETS_ROOT,                                \
+			 _array[_index]._type);                                \
+		int _file_read_access = access(_dest, R_OK);                   \
+		CU_ASSERT_EQUAL_FATAL(_file_read_access, 0);                   \
+	} while (0)
+
+
 #define ASSETS_ROOT "/mnt/DFS/MULTIMEDIA_DATA"
+#define TEST_FILE_PATH "/tmp/test_mux.MP4"
+#define TEST_FILE_PATH_MRF "/tmp/test_mux.MRF"
+#define TEST_FILE_PATH_CHK "/tmp/test_mux.CHK"
 
 
 extern CU_TestInfo g_mp4_test_demux[];
+extern CU_TestInfo g_mp4_test_mux[];
+extern CU_TestInfo g_mp4_test_recovery[];
 extern CU_TestInfo g_mp4_test_utilities[];
 
 

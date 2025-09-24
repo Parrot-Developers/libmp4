@@ -30,6 +30,8 @@
 
 static CU_SuiteInfo s_suites[] = {
 	{FN("demux"), NULL, NULL, g_mp4_test_demux},
+	{FN("mux"), NULL, NULL, g_mp4_test_mux},
+	{FN("recovery"), NULL, NULL, g_mp4_test_recovery},
 	{FN("utilities"), NULL, NULL, g_mp4_test_utilities},
 
 	CU_SUITE_INFO_NULL,

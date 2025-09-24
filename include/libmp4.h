@@ -111,10 +111,18 @@ enum mp4_metadata_cover_type {
 
 
 enum mp4_seek_method {
+	/* Seek to the previous (<) sample */
 	MP4_SEEK_METHOD_PREVIOUS = 0,
+	/* Seek to the previous (<) sync sample */
 	MP4_SEEK_METHOD_PREVIOUS_SYNC,
-	MP4_SEEK_METHOD_NEXT_SYNC,
+	/* Seek to the nearest sample */
+	MP4_SEEK_METHOD_NEAREST,
+	/* Seek to the nearest sync sample */
 	MP4_SEEK_METHOD_NEAREST_SYNC,
+	/* Seek to the next (>) sample */
+	MP4_SEEK_METHOD_NEXT,
+	/* Seek to the next (>) sync sample */
+	MP4_SEEK_METHOD_NEXT_SYNC,
 };
 
 
@@ -454,10 +462,12 @@ MP4_API int mp4_demux_seek_to_track_prev_sample(struct mp4_demux *demux,
  * Seek to the next sample of a track.
  * @param demux: demuxer instance handle
  * @param track_id: track ID
+ * @param resync: if set, seek to the previous sync point and silent frames
  * @return 0 on success, negative errno value in case of error
  */
 MP4_API int mp4_demux_seek_to_track_next_sample(struct mp4_demux *demux,
-						unsigned int track_id);
+						unsigned int track_id,
+						bool resync);
 
 
 /**
@@ -555,7 +565,7 @@ struct mp4_mux_config {
  * @param ret_obj: muxer instance handle (output)
  * @return 0 on success, negative errno value in case of error
  */
-MP4_API int mp4_mux_open(struct mp4_mux_config *config,
+MP4_API int mp4_mux_open(const struct mp4_mux_config *config,
 			 struct mp4_mux **ret_obj);
 
 
@@ -590,7 +600,7 @@ MP4_API int mp4_mux_close(struct mp4_mux *mux);
  * Add a track in an MP4 muxer.
  * @param mux: muxer instance handle
  * @param params: mp4_mux_track_params of the track to add
- * @return 0 on success, negative errno value in case of error
+ * @return the new track count on success, negative errno value in case of error
  */
 MP4_API int mp4_mux_add_track(struct mp4_mux *mux,
 			      const struct mp4_mux_track_params *params);

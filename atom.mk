@@ -85,9 +85,12 @@ ifdef TARGET_TEST
 include $(CLEAR_VARS)
 
 LOCAL_MODULE := tst-libmp4
+LOCAL_C_INCLUDES := $(LOCAL_PATH)/src
 LOCAL_SRC_FILES := \
 	tests/mp4_test.c \
 	tests/mp4_test_demux.c \
+	tests/mp4_test_mux.c \
+	tests/mp4_test_recovery.c \
 	tests/mp4_test_utilities.c
 LOCAL_LIBRARIES := \
 	json \

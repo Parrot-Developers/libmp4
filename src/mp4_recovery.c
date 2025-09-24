@@ -275,6 +275,7 @@ MP4_API int mp4_recovery_parse_link_file(const char *link_file,
 					 struct link_file_info *info)
 {
 	int ret = 0;
+	int err = 0;
 	ssize_t read_char = 0;
 	FILE *f_link = NULL;
 	char *curr_recovery_version = NULL;
@@ -290,7 +291,8 @@ MP4_API int mp4_recovery_parse_link_file(const char *link_file,
 	f_link = fopen(link_file, "r");
 	if (f_link == NULL) {
 		ret = -errno;
-		goto out;
+		ULOG_ERRNO("fopen ('%s')", -ret, link_file);
+		return ret;
 	}
 
 	/* recovery version */
@@ -368,11 +370,11 @@ out:
 	if (info->data_file == NULL || info->tables_file == NULL)
 		ret = -EINVAL;
 	if (f_link != NULL) {
-		ret = fclose(f_link);
-		if (ret < 0) {
-			ret = -errno;
-			ULOG_ERRNO("fclose", -ret);
-			return ret;
+		err = fclose(f_link);
+		if (err < 0) {
+			ULOG_ERRNO("fclose", errno);
+			if (ret == 0)
+				ret = -errno;
 		}
 	}
 	free(curr_recovery_version);
@@ -457,8 +459,8 @@ MP4_API int mp4_recovery_recover_file(const char *link_file,
 	ret = mp4_recovery_parse_link_file(link_file, &info);
 	if (ret < 0) {
 		*error_msg = strdup("failed to parse link file");
+		ULOG_ERRNO("mp4_recovery_parse_link_file", -ret);
 		ULOGE("%s (%s)", *error_msg, link_file);
-		ret = -ENOENT;
 		goto out;
 	}
 
@@ -583,9 +585,10 @@ MP4_API int mp4_recovery_recover_file_from_paths(const char *link_file,
 	ULOG_ERRNO_RETURN_ERR_IF(data_file == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(error_msg == NULL, EINVAL);
 
-	fd_link = open(link_file, O_WRONLY | O_CREAT, 0600);
+	fd_link = open(link_file, O_WRONLY);
 	if (fd_link < 0) {
 		ret = -errno;
+		*error_msg = strdup("failed to parse link file");
 		ULOG_ERRNO("open:'%s'", -ret, link_file);
 		return ret;
 	}
@@ -608,7 +611,6 @@ MP4_API int mp4_recovery_recover_file_from_paths(const char *link_file,
 	if (ret < 0) {
 		*error_msg = strdup("failed to parse link file");
 		ULOGE("%s (%s)", *error_msg, link_file);
-		ret = -ENOENT;
 		goto error;
 	}
 
