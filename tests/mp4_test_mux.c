@@ -51,7 +51,6 @@ static struct mp4_mux_config s_valid_config_recovery = {
 	.creation_time = 1000,
 	.modification_time = 1000,
 	.tables_size_mbytes = MP4_MUX_DEFAULT_TABLE_SIZE_MB,
-	.recovery.link_file = TEST_FILE_PATH_CHK,
 	.recovery.tables_file = TEST_FILE_PATH_MRF,
 	.recovery.check_storage_uuid = 0,
 };
@@ -88,8 +87,6 @@ static void remove_tmp_files(void)
 	res = remove(TEST_FILE_PATH);
 	CU_ASSERT_EQUAL(res, 0);
 	res = remove(TEST_FILE_PATH_MRF);
-	CU_ASSERT_EQUAL(res, 0);
-	res = remove(TEST_FILE_PATH_CHK);
 	CU_ASSERT_EQUAL(res, 0);
 }
 
@@ -701,6 +698,8 @@ static void test_mp4_mux_api_add_track(void)
 		case MP4_TRACK_TYPE_CHAPTERS:
 			CU_ASSERT_EQUAL(res, ++track_count);
 			break;
+		default:
+			break;
 		}
 	}
 
@@ -720,18 +719,12 @@ static void test_mp4_mux_api_open_close(void)
 	struct stat st_file;
 	struct mp4_mux *mux;
 	struct mp4_mux_config valid_config = s_valid_config_recovery;
-	valid_config.recovery.link_file = NULL;
-	valid_config.recovery.tables_file = NULL;
 	struct mp4_mux_config invalid_config1 = s_valid_config_recovery;
 	invalid_config1.filename = NULL;
 	struct mp4_mux_config invalid_config2 = s_valid_config_recovery;
 	invalid_config2.filename = "";
 	struct mp4_mux_config invalid_config3 = s_valid_config_recovery;
 	invalid_config3.tables_size_mbytes = 0;
-	struct mp4_mux_config invalid_config4 = s_valid_config_recovery;
-	invalid_config4.recovery.tables_file = NULL;
-	struct mp4_mux_config invalid_config5 = s_valid_config_recovery;
-	invalid_config5.recovery.link_file = NULL;
 
 	/* both null */
 	res = mp4_mux_open(NULL, NULL);
@@ -755,10 +748,6 @@ static void test_mp4_mux_api_open_close(void)
 	CU_ASSERT_EQUAL(res, -EINVAL);
 	res = mp4_mux_open(&invalid_config3, &mux);
 	CU_ASSERT_EQUAL(res, -EINVAL);
-	res = mp4_mux_open(&invalid_config4, &mux);
-	CU_ASSERT_EQUAL(res, -EINVAL);
-	res = mp4_mux_open(&invalid_config5, &mux);
-	CU_ASSERT_EQUAL(res, -EINVAL);
 
 	res = mp4_mux_open(&valid_config, &mux);
 	CU_ASSERT_EQUAL(res, 0);
@@ -780,12 +769,10 @@ static void test_mp4_mux_api_open_close(void)
 	CU_ASSERT_EQUAL(res, 0);
 	CU_ASSERT_EQUAL(access(TEST_FILE_PATH, F_OK), 0);
 	CU_ASSERT_EQUAL(access(TEST_FILE_PATH_MRF, F_OK), 0);
-	CU_ASSERT_EQUAL(access(TEST_FILE_PATH_CHK, F_OK), 0);
 
 	res = mp4_mux_close(mux);
 	CU_ASSERT_EQUAL(res, 0);
 	CU_ASSERT_EQUAL(access(TEST_FILE_PATH_MRF, F_OK), 0);
-	CU_ASSERT_EQUAL(access(TEST_FILE_PATH_CHK, F_OK), 0);
 
 	remove_tmp_files();
 }

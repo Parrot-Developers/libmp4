@@ -81,11 +81,11 @@ static int uint_to_str(uint32_t str, char res[5])
 {
 	if (!res)
 		return -EINVAL;
-	(res)[3] = (char)((str >> 0) & 0xff);
-	(res)[2] = (char)((str >> 8) & 0xff);
-	(res)[1] = (char)((str >> (8 * 2)) & 0xff);
-	(res)[0] = (char)((str >> (8 * 3)) & 0xff);
-	(res)[4] = '\0';
+	res[3] = (char)((str >> 0) & 0xff);
+	res[2] = (char)((str >> 8) & 0xff);
+	res[1] = (char)((str >> (8 * 2)) & 0xff);
+	res[0] = (char)((str >> (8 * 3)) & 0xff);
+	res[4] = '\0';
 	key_to_printable(res);
 	return 0;
 }
@@ -134,7 +134,7 @@ static int json_add_hex_from_binary_data(uint16_t bin_data_size,
 out:
 	free(bin_data);
 	free(hex_data);
-	return 0;
+	return ret;
 }
 
 
@@ -147,18 +147,23 @@ static int skip_rest_of_box(struct mp4_to_json_param *param,
 
 	(void)uint_to_str(param->box.type, name);
 
+	if (param->box.type == MP4_MDAT_BOX)
+		*box_read_bytes = 8;
+
+
+	uint64_t diff = param->box.size - *box_read_bytes;
+	const char *suffix = (diff > 1) ? "s" : "";
+
 	if (*box_read_bytes == (off_t)8) {
-		/* Skip full box */
-		ULOGD("%s: skipping %d byte%s",
+		ULOGD("%s: skipping %lu byte%s",
 		      name,
-		      (int)(param->box.size - *box_read_bytes),
-		      (param->box.size - *box_read_bytes) > 0 ? "s" : "");
+		      (unsigned long)diff,
+		      suffix);
 	} else {
-		/* Skip end of box */
-		ULOGW("%s: skipping %d byte%s",
+		ULOGW("%s: skipping %lu byte%s",
 		      name,
-		      (int)(param->box.size - *box_read_bytes),
-		      (param->box.size - *box_read_bytes) > 0 ? "s" : "");
+		      (unsigned long)diff,
+		      suffix);
 	}
 
 	json_object_object_add(
@@ -187,8 +192,7 @@ static int read_time_vars(struct mp4_to_json_param *param,
 	uint64_t modification_time64;
 	uint64_t duration64;
 
-	switch (param->box.version) {
-	case 1:
+	if (param->box.version == 1) {
 		/* 'creation_time' */
 		MP4_READ_32(param->file.fd, val32, *box_read_bytes);
 		creation_time64 = (uint64_t)ntohl(val32) << 32;
@@ -231,10 +235,7 @@ static int read_time_vars(struct mp4_to_json_param *param,
 		json_object_object_add(param->box.json,
 				       "duration",
 				       json_object_new_int64(duration64));
-		break;
-
-	case 2:
-	default:
+	} else {
 		/* 'creation_time' */
 		MP4_READ_32(param->file.fd, val32, *box_read_bytes);
 		creation_time = ntohl(val32);
@@ -271,7 +272,6 @@ static int read_time_vars(struct mp4_to_json_param *param,
 		json_object_object_add(param->box.json,
 				       "duration",
 				       json_object_new_int64(duration));
-		break;
 	}
 	return 0;
 }
@@ -484,7 +484,6 @@ static int read_dref_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 
 static int read_esds_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 {
-	off_t min_bytes = 9;
 	uint32_t val32;
 	uint16_t val16;
 	uint8_t val8;
@@ -518,8 +517,6 @@ static int read_esds_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 	json_object_object_add(param->box.json,
 			       "ES_descriptor_size",
 			       json_object_new_int64(size));
-
-	min_bytes = *box_read_bytes + size;
 
 	MP4_READ_16(param->file.fd, val16, *box_read_bytes);
 	val16 = ntohs(val16);
@@ -572,8 +569,6 @@ static int read_esds_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 	}
 	json_object_object_add(
 		param->box.json, "DCD_size", json_object_new_int64(size));
-
-	min_bytes = *box_read_bytes + size;
 
 	/* 'DecoderConfigDescriptor.object_type_indication' */
 	uint8_t object_type_indication;
@@ -632,13 +627,11 @@ static int read_esds_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 	json_object_object_add(
 		param->box.json, "DSI_size", json_object_new_int64(size));
 
-	min_bytes = *box_read_bytes + size;
-
 	if (size > MAX_ALLOC_SIZE) {
 		ULOGW("%s size too big, skipping rest of box", __func__);
 		return skip_rest_of_box(param, box_read_bytes);
 	}
-	if ((size > 0)) {
+	if (size > 0) {
 		uint8_t *audio_specific_config = malloc(size);
 		if (audio_specific_config == NULL) {
 			ULOG_ERRNO("malloc", ENOMEM);
@@ -800,7 +793,9 @@ static int read_tkhd_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 	uint32_t val32;
 	int16_t layer;
 	int16_t alternate_group;
-	float width, height, volume;
+	double width;
+	double height;
+	double volume;
 
 	read_version_flags(param, box_read_bytes);
 
@@ -834,7 +829,7 @@ static int read_tkhd_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 			       json_object_new_int(alternate_group));
 
 	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
-	volume = (float)((ntohl(val32) >> 16) & 0xFFFF) / 256.;
+	volume = ((ntohl(val32) >> 16) & 0xFFFF) / 256.;
 	json_object_object_add(
 		param->box.json, "volume", json_object_new_double(volume));
 
@@ -842,12 +837,12 @@ static int read_tkhd_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 		MP4_READ_32(param->file.fd, val32, *box_read_bytes);
 
 	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
-	width = (float)ntohl(val32) / 65536.;
+	width = ntohl(val32) / 65536.;
 	json_object_object_add(
 		param->box.json, "width", json_object_new_double(width));
 
 	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
-	height = (float)ntohl(val32) / 65536.;
+	height = ntohl(val32) / 65536.;
 	json_object_object_add(
 		param->box.json, "height", json_object_new_double(height));
 
@@ -1295,7 +1290,6 @@ skip:
 static int read_mett_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 {
 	uint16_t val16;
-	uint8_t val8;
 	uint32_t val32;
 	size_t len = 0;
 	char *newstr;
@@ -1312,7 +1306,6 @@ static int read_mett_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 		return skip_rest_of_box(param, box_read_bytes);
 	}
 	newstr = calloc(len + 1, 1);
-	val8 = 1;
 	if (read(param->file.fd, newstr, len) == -1) {
 		free(newstr);
 		ULOG_ERRNO("read", errno);
@@ -1468,7 +1461,8 @@ static int read_avc1_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 	uint32_t val32;
 	uint16_t val16;
 	uint16_t data_reference_index;
-	float horizresolution, vertresolution;
+	float horizresolution;
+	float vertresolution;
 	uint16_t depth;
 	ssize_t count;
 	uint16_t frame_count;
@@ -1514,7 +1508,7 @@ static int read_avc1_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 			       "frame_count",
 			       json_object_new_int64(frame_count));
 	count = read(param->file.fd, compressorname, 32);
-	if (count == -1 || (off_t)count != 32) {
+	if ((count == -1) || (count != 32)) {
 		ULOG_ERRNO("read", errno);
 		return skip_rest_of_box(param, box_read_bytes);
 	}
@@ -1538,7 +1532,8 @@ static int read_hvc1_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 	uint32_t val32;
 	uint16_t val16;
 	uint16_t data_reference_index;
-	float horizresolution, vertresolution;
+	float horizresolution;
+	float vertresolution;
 	uint16_t depth;
 	ssize_t count;
 	uint16_t frame_count;
@@ -1584,7 +1579,7 @@ static int read_hvc1_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 			       "frame_count",
 			       json_object_new_int64(frame_count));
 	count = read(param->file.fd, compressorname, 32);
-	if (count == -1 || (off_t)count != 32) {
+	if ((count == -1) || (count != 32)) {
 		ULOG_ERRNO("read", errno);
 		return skip_rest_of_box(param, box_read_bytes);
 	}
@@ -1607,7 +1602,8 @@ static int read_hvcc_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 {
 	uint32_t val32;
 	uint16_t val16;
-	uint8_t val8, nb_arrays;
+	uint8_t val8;
+	uint8_t nb_arrays;
 	uint8_t version;
 	int err = 0;
 
@@ -1717,7 +1713,8 @@ static int read_hvcc_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 	bool first_pps = true;
 	bool first_sps = true;
 	for (int i = 0; i < nb_arrays; i++) {
-		uint8_t array_completeness, nalu_type;
+		uint8_t array_completeness;
+		uint8_t nalu_type;
 		uint16_t nb_nalus;
 
 		json_object_object_add(
@@ -2005,7 +2002,8 @@ static int read_xyz_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 	uint16_t val16;
 	ssize_t count;
 	char *udta_location_value = NULL;
-	uint16_t locationSize, languageCode;
+	uint16_t locationSize;
+	uint16_t languageCode;
 	char name[5];
 
 	MP4_READ_16(param->file.fd, val16, *box_read_bytes);
@@ -2054,7 +2052,7 @@ out:
 
 static int read_keys_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 {
-	uint32_t val32, i;
+	uint32_t val32;
 	unsigned int metadata_count;
 	char *metadata_key = NULL;
 	uint32_t key_size;
@@ -2092,7 +2090,7 @@ static int read_keys_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 		ULOGE("calloc");
 		goto skip;
 	}
-	for (i = 0; i < metadata_count; i++) {
+	for (uint32_t i = 0; i < metadata_count; i++) {
 		MP4_READ_32(param->file.fd, val32, *box_read_bytes);
 		key_size = ntohl(val32);
 		if (key_size < 8) {
@@ -2427,7 +2425,7 @@ static int add_box_to_json(struct mp4_to_json_param *param)
 	int ret = 0;
 	uint32_t type;
 	struct json_object *mp4_json_box;
-	int offset = (int)lseek(param->file.fd, 0, SEEK_CUR);
+	ssize_t offset = lseek(param->file.fd, 0, SEEK_CUR);
 
 	if (offset < 0) {
 		ULOG_ERRNO("lseek", -errno);
@@ -2461,9 +2459,9 @@ static int add_box_to_json(struct mp4_to_json_param *param)
 	if (param->verbose) {
 		for (uint32_t i = 0; i < param->parent.level; i++)
 			printf("|   ");
-		printf("<Type: %s - size: %" PRIu32 " - offset: %d>\n",
+		printf("<Type: %s - largesize: %" PRIu64 " - offset: %zd>\n",
 		       key,
-		       size,
+		       (uint64_t)param->box.size,
 		       offset);
 	}
 
@@ -2493,8 +2491,8 @@ int mp4_file_to_json(const char *filename,
 	struct stat st;
 	struct mp4_to_json_param *param;
 
-	ULOG_ERRNO_RETURN_ERR_IF(filename == NULL, EINVAL);
-	ULOG_ERRNO_RETURN_ERR_IF(strlen(filename) == 0, EINVAL);
+	ULOG_ERRNO_RETURN_ERR_IF(mp4_validate_str_len(filename, PATH_MAX) < 1,
+				 EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(json_obj == NULL, EINVAL);
 
 	json_arr = NULL;

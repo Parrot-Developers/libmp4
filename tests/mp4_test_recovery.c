@@ -29,96 +29,44 @@
 #include <unistd.h>
 
 static const struct {
-	const char *link_file;
+	bool recovery_version_supported;
 	const char *tables_file;
-	const char *broken_file;
-	const char *copied_file;
-	const char *copied_link;
-	const char *given_data;
-	const char *given_mrf;
-	const char *uuid;
-	size_t tables_size_b;
-	uint32_t recovery_version;
+	const char *data_file;
+	const char *copied_tables;
+	const char *copied_data;
+	struct mp4_recovery_tables_header header;
 } assets_tests_mp4_recovery[] = {
 	{
-		.link_file = "Tests/recovery/0000003_video.CHK",
+		.recovery_version_supported = true,
+		.tables_file = "Tests/recovery/0000016_video.MRF",
+		.data_file = "Tests/recovery/0000016_video.TMP",
+		.copied_tables = "/tmp/0000016_video.MRF",
+		.copied_data = "/tmp/0000016_videoTMP.CPY",
+		.header =
+			{
+				.magic = MP4_RECOVERY_TABLES_HEADER_MAGIC,
+				.tables_size = 324100,
+				.mux_tables_size = 5,
+				.version = 3,
+				.data_path =
+					"/tmp/regis-video/user/DCIM//Flights/"
+					"2026.01.12 09h39/0000016_video.TMP",
+				.data_path_length =
+					sizeof("/tmp/regis-video/user/DCIM//"
+					       "Flights/2026.01.12 09h39/"
+					       "0000016_video.TMP") -
+					1,
+				.uuid = "",
+				.uuid_length = 0,
+			},
+	},
+	{
+		.recovery_version_supported = false,
 		.tables_file = "Tests/recovery/0000003_video.MRF",
-		.broken_file = "Tests/recovery/0000003_video.TMP",
-		.copied_file = "/tmp/0000003_videoTMP.CPY",
-		.copied_link = "/tmp/0000003_videoCHK.CPY",
-		.given_data =
-			"/tmp/regis-video/user/DCIM//Flights/2025.01.21 09h28/"
-			"0000003_video.TMP",
-		.given_mrf = "/tmp/regis-video/recovery/0000003_video.MRF",
-		.uuid = NULL,
-		.tables_size_b = 5242880,
-		.recovery_version = 2,
-	},
-};
-
-static const struct {
-	const char *link_file;
-	const char *copied_link_file;
-	const char *broken_file;
-	const char *copied_broken_file;
-	const char *tables_file;
-	const char *copied_tables_file;
-	const char *error_msg;
-	int expected_result;
-} invalid_link_files[] = {
-	{
-		.link_file = "Tests/recovery/invalid.CHK",
-		.copied_link_file = "/tmp/invalid.CHK",
-		.broken_file = NULL,
-		.copied_broken_file = NULL,
-		.tables_file = NULL,
-		.copied_tables_file = NULL,
-		.expected_result = -ENOENT,
-	},
-	{
-		.link_file = "Tests/recovery/invalid_2.CHK",
-		.copied_link_file = "/tmp/invalid_2.CHK",
-		.broken_file = NULL,
-		.copied_broken_file = NULL,
-		.tables_file = "Tests/recovery/0000003_video.MRF",
-		.copied_tables_file = "/tmp/0000003_video.MRF",
-		.expected_result = -ENOENT,
-	},
-	{
-		.link_file = "Tests/recovery/invalid_3.CHK",
-		.copied_link_file = "/tmp/invalid_3.CHK",
-		.broken_file = "Tests/recovery/0000003_video.TMP",
-		.copied_broken_file = "/tmp/0000003_video.TMP",
-		.tables_file = NULL,
-		.copied_tables_file = NULL,
-		.expected_result = -ENOENT,
-	},
-	{
-		.link_file = "Tests/recovery/invalid_4.CHK",
-		.copied_link_file = "/tmp/invalid_4.CHK",
-		.broken_file = "Tests/recovery/0000003_video.TMP",
-		.copied_broken_file = "/tmp/0000003_video.TMP",
-		.tables_file = "Tests/recovery/0000003_video.MRF",
-		.copied_tables_file = "/tmp/0000003_video.MRF",
-		.expected_result = -EAGAIN,
-	},
-	{
-		.link_file = "Tests/recovery/invalid_5.CHK",
-		.copied_link_file = "/tmp/invalid_5.CHK",
-		.broken_file = NULL,
-		.copied_broken_file = NULL,
-		.tables_file = NULL,
-		.copied_tables_file = NULL,
-		.expected_result = -EINVAL,
-	},
-	{
-		.link_file = "Tests/recovery/invalid_6.CHK",
-		.copied_link_file = "/tmp/invalid_6.CHK",
-		.broken_file = NULL,
-		.copied_broken_file = NULL,
-		.tables_file = NULL,
-		.copied_tables_file = NULL,
-		.expected_result = -EINVAL,
+		.data_file = "Tests/recovery/0000003_video.TMP",
+		.copied_tables = NULL,
+		.copied_data = NULL,
+		.header = {},
 	},
 };
 
@@ -155,74 +103,65 @@ static int copy_file(const char *src, const char *dst)
 }
 
 
-static void test_mp4_recovery_recover_file(void)
+static void test_mp4_recovery_tables_header_read_file(void)
 {
 	int res = 0;
-	char link_file[200];
-	char *error_msg = NULL;
-	char *recovered_file;
-	char data_file[200];
 	char tables_file[200];
+	struct mp4_recovery_tables_header header = {};
 
-	res = mp4_recovery_recover_file(NULL, &error_msg, &recovered_file);
+	GET_PATH(tables_file, 0, assets_tests_mp4_recovery, tables_file);
+
+	/* tables file is null */
+	res = mp4_recovery_tables_header_read_file(NULL, &header);
 	CU_ASSERT_EQUAL(res, -EINVAL);
 
-	res = mp4_recovery_recover_file(
-		"invalid_link_file_path", &error_msg, &recovered_file);
+	/* header is null */
+	res = mp4_recovery_tables_header_read_file(tables_file, NULL);
+	CU_ASSERT_EQUAL(res, -EINVAL);
+
+	/* tables path is invalid */
+	res = mp4_recovery_tables_header_read_file("invalid_tables_file_path",
+						   &header);
 	CU_ASSERT_EQUAL(res, -ENOENT);
-	free(error_msg);
-	error_msg = NULL;
 
-	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(invalid_link_files); i++) {
-		GET_PATH(link_file, i, invalid_link_files, link_file);
+	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(assets_tests_mp4_recovery);
+	     i++) {
+		GET_PATH(
+			tables_file, i, assets_tests_mp4_recovery, tables_file);
 
-		(void)copy_file(link_file,
-				invalid_link_files[i].copied_link_file);
-
-		if (invalid_link_files[i].broken_file &&
-		    invalid_link_files[i].copied_broken_file) {
-			GET_PATH(data_file, i, invalid_link_files, broken_file);
-
-			(void)copy_file(
-				data_file,
-				invalid_link_files[i].copied_broken_file);
+		res = mp4_recovery_tables_header_read_file(tables_file,
+							   &header);
+		if (!assets_tests_mp4_recovery[i].recovery_version_supported) {
+			CU_ASSERT_EQUAL(res, -EPROTO);
+			continue;
 		}
+		CU_ASSERT_EQUAL(res, 0);
+		CU_ASSERT_EQUAL(header.magic,
+				assets_tests_mp4_recovery[i].header.magic);
+		CU_ASSERT_EQUAL(
+			header.tables_size,
+			assets_tests_mp4_recovery[i].header.tables_size);
+		CU_ASSERT_EQUAL(
+			header.mux_tables_size,
+			assets_tests_mp4_recovery[i].header.mux_tables_size);
+		CU_ASSERT_EQUAL(header.version,
+				assets_tests_mp4_recovery[i].header.version);
+		CU_ASSERT_STRING_EQUAL(
+			header.data_path,
+			assets_tests_mp4_recovery[i].header.data_path);
+		CU_ASSERT_EQUAL(
+			header.data_path_length,
+			assets_tests_mp4_recovery[i].header.data_path_length);
+		CU_ASSERT_STRING_EQUAL(
+			header.uuid, assets_tests_mp4_recovery[i].header.uuid);
+		CU_ASSERT_EQUAL(
+			header.uuid_length,
+			assets_tests_mp4_recovery[i].header.uuid_length);
 
-		if (invalid_link_files[i].tables_file &&
-		    invalid_link_files[i].copied_tables_file) {
-			GET_PATH(tables_file,
-				 i,
-				 invalid_link_files,
-				 tables_file);
-			(void)copy_file(
-				tables_file,
-				invalid_link_files[i].copied_tables_file);
-		}
-
-		/* error_msg is null */
-		res = mp4_recovery_recover_file(
-			invalid_link_files[i].copied_link_file,
-			NULL,
-			&recovered_file);
-		CU_ASSERT_EQUAL(res, -EINVAL);
-
-		res = mp4_recovery_recover_file(
-			invalid_link_files[i].copied_link_file,
-			&error_msg,
-			&recovered_file);
-		CU_ASSERT_EQUAL(res, invalid_link_files[i].expected_result);
-		free(error_msg);
-		error_msg = NULL;
-
-		if (invalid_link_files[i].tables_file &&
-		    invalid_link_files[i].copied_tables_file)
-			remove(invalid_link_files[i].copied_tables_file);
-
-		if (invalid_link_files[i].broken_file &&
-		    invalid_link_files[i].copied_broken_file)
-			remove(invalid_link_files[i].copied_broken_file);
-
-		remove(invalid_link_files[i].copied_link_file);
+		res = mp4_recovery_tables_header_clear(&header);
+		CU_ASSERT_EQUAL(res, 0);
+		CU_ASSERT_PTR_NULL(header.uuid);
+		CU_ASSERT_PTR_NULL(header.data_path);
 	}
 }
 
@@ -230,175 +169,86 @@ static void test_mp4_recovery_recover_file(void)
 static void test_mp4_recovery_recover_file_from_paths(void)
 {
 	int res = 0;
-	char link_file[200];
 	char tables_file[200];
 	char data_file[200];
-	char *error_msg;
+	char *error_msg = NULL;
 	char *recovered_file;
-	struct mp4_demux *demux;
+	struct mp4_demux *demux = NULL;
 
-	GET_PATH(link_file, 0, assets_tests_mp4_recovery, link_file);
 	GET_PATH(tables_file, 0, assets_tests_mp4_recovery, tables_file);
-	GET_PATH(data_file, 0, assets_tests_mp4_recovery, broken_file);
+	GET_PATH(data_file, 0, assets_tests_mp4_recovery, data_file);
 
-	/* all null */
+	/* tables file is null */
 	res = mp4_recovery_recover_file_from_paths(
-		NULL, NULL, NULL, NULL, NULL);
+		NULL, data_file, &error_msg, &recovered_file);
 	CU_ASSERT_EQUAL(res, -EINVAL);
 
-	/* link_file null */
-	res = mp4_recovery_recover_file_from_paths(
-		NULL, tables_file, data_file, &error_msg, &recovered_file);
-	CU_ASSERT_EQUAL(res, -EINVAL);
-
-	/* tables_file null */
-	res = mp4_recovery_recover_file_from_paths(
-		link_file, NULL, data_file, &error_msg, &recovered_file);
-	CU_ASSERT_EQUAL(res, -EINVAL);
-
-	/* data_file null */
-	res = mp4_recovery_recover_file_from_paths(
-		link_file, tables_file, NULL, &error_msg, &recovered_file);
-	CU_ASSERT_EQUAL(res, -EINVAL);
+	/* tables path is invalid */
+	res = mp4_recovery_recover_file_from_paths("invalid_tables_file_path",
+						   data_file,
+						   &error_msg,
+						   &recovered_file);
+	CU_ASSERT_EQUAL(res, -ENOENT);
+	free(error_msg);
+	error_msg = NULL;
 
 	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(assets_tests_mp4_recovery);
 	     i++) {
-		GET_PATH(link_file, i, assets_tests_mp4_recovery, link_file);
+		if (!assets_tests_mp4_recovery[i].recovery_version_supported)
+			continue;
+
 		GET_PATH(
 			tables_file, i, assets_tests_mp4_recovery, tables_file);
-		GET_PATH(data_file, i, assets_tests_mp4_recovery, broken_file);
+		GET_PATH(data_file, i, assets_tests_mp4_recovery, data_file);
 
-		res = copy_file(data_file,
-				assets_tests_mp4_recovery[i].copied_file);
-		CU_ASSERT_EQUAL(res, 0);
+		(void)copy_file(tables_file,
+				assets_tests_mp4_recovery[i].copied_tables);
+		(void)copy_file(data_file,
+				assets_tests_mp4_recovery[i].copied_data);
 
-		res = copy_file(link_file,
-				assets_tests_mp4_recovery[i].copied_link);
-		CU_ASSERT_EQUAL(res, 0);
-
-		/* invalid link file path */
+		/* data file is null */
 		res = mp4_recovery_recover_file_from_paths(
-			"invalid_link_file_path",
-			tables_file,
-			assets_tests_mp4_recovery[i].copied_file,
+			assets_tests_mp4_recovery[i].copied_tables,
+			NULL,
 			&error_msg,
 			&recovered_file);
-		CU_ASSERT_EQUAL(res, -ENOENT);
-		CU_ASSERT_STRING_EQUAL(error_msg, "failed to parse link file");
-		free(error_msg);
-		error_msg = NULL;
+		CU_ASSERT_EQUAL(res, -EINVAL);
 
-		/* invalid tables file path */
+		/* data path is invalid */
 		res = mp4_recovery_recover_file_from_paths(
-			assets_tests_mp4_recovery[i].copied_link,
-			"invalid_tables_file_path",
-			assets_tests_mp4_recovery[i].copied_file,
-			&error_msg,
-			&recovered_file);
-		CU_ASSERT_EQUAL(res, -ENOENT);
-		CU_ASSERT_STRING_EQUAL(error_msg, "invalid tables file");
-		free(error_msg);
-		error_msg = NULL;
-
-		/* invalid data file path */
-		res = mp4_recovery_recover_file_from_paths(
-			assets_tests_mp4_recovery[i].copied_link,
-			tables_file,
+			assets_tests_mp4_recovery[i].copied_tables,
 			"invalid_data_file_path",
 			&error_msg,
 			&recovered_file);
 		CU_ASSERT_EQUAL(res, -ENOENT);
-		CU_ASSERT_STRING_EQUAL(error_msg, "invalid data file");
 		free(error_msg);
 		error_msg = NULL;
 
 		res = mp4_recovery_recover_file_from_paths(
-			assets_tests_mp4_recovery[i].copied_link,
-			tables_file,
-			assets_tests_mp4_recovery[i].copied_file,
+			assets_tests_mp4_recovery[i].copied_tables,
+			assets_tests_mp4_recovery[i].copied_data,
 			&error_msg,
-			NULL);
+			&recovered_file);
 		CU_ASSERT_EQUAL(res, 0);
-		CU_ASSERT_PTR_NULL(error_msg);
+		free(error_msg);
+		error_msg = NULL;
 
-		/* check file is valid */
-		res = mp4_demux_open(assets_tests_mp4_recovery[i].copied_file,
-				     &demux);
+		res = mp4_demux_open(recovered_file, &demux);
 		CU_ASSERT_EQUAL(res, 0);
-
 		res = mp4_demux_close(demux);
 		CU_ASSERT_EQUAL(res, 0);
+		free(recovered_file);
 
-		remove(assets_tests_mp4_recovery[i].copied_file);
-		remove(assets_tests_mp4_recovery[i].copied_link);
-	}
-}
-
-
-static void test_mp4_recovery_parse_link_file(void)
-{
-	int res = 0;
-	struct link_file_info info;
-	char link_file[200];
-
-	GET_PATH(link_file, 0, assets_tests_mp4_recovery, link_file);
-
-	/* both null */
-	res = mp4_recovery_parse_link_file(NULL, NULL);
-	CU_ASSERT_EQUAL(res, -EINVAL);
-
-	/* path null */
-	res = mp4_recovery_parse_link_file(NULL, &info);
-	CU_ASSERT_EQUAL(res, -EINVAL);
-
-	/* info is null */
-	res = mp4_recovery_parse_link_file(link_file, NULL);
-	CU_ASSERT_EQUAL(res, -EINVAL);
-
-	/* invalid link file path */
-	res = mp4_recovery_parse_link_file("invalid_filepath", &info);
-	CU_ASSERT_EQUAL(res, -ENOENT);
-
-	res = mp4_recovery_link_file_info_destroy(NULL);
-	CU_ASSERT_EQUAL(res, -EINVAL);
-
-	for (size_t i = 0; i < FUTILS_SIZEOF_ARRAY(assets_tests_mp4_recovery);
-	     i++) {
-		GET_PATH(link_file, i, assets_tests_mp4_recovery, link_file);
-
-		res = mp4_recovery_parse_link_file(link_file, &info);
-		CU_ASSERT_EQUAL(res, 0);
-		CU_ASSERT_STRING_EQUAL(info.tables_file,
-				       assets_tests_mp4_recovery[i].given_mrf);
-		CU_ASSERT_STRING_EQUAL(info.data_file,
-				       assets_tests_mp4_recovery[i].given_data);
-		if (info.uuid == NULL) {
-			CU_ASSERT_EQUAL(assets_tests_mp4_recovery[i].uuid,
-					NULL);
-		} else if (assets_tests_mp4_recovery[i].uuid == NULL) {
-			CU_ASSERT_EQUAL(info.uuid, NULL);
-		} else {
-			CU_ASSERT_STRING_EQUAL(
-				info.uuid, assets_tests_mp4_recovery[i].uuid);
-		}
-		CU_ASSERT_EQUAL(info.tables_size_b,
-				assets_tests_mp4_recovery[i].tables_size_b);
-		CU_ASSERT_EQUAL(info.recovery_version,
-				assets_tests_mp4_recovery[i].recovery_version);
-
-		/* valid */
-		res = mp4_recovery_link_file_info_destroy(&info);
-		CU_ASSERT_EQUAL(res, 0);
+		remove(assets_tests_mp4_recovery[i].copied_tables);
+		remove(assets_tests_mp4_recovery[i].copied_data);
 	}
 }
 
 
 CU_TestInfo g_mp4_test_recovery[] = {
-	{FN("mp4-recovery-parse-link-file"),
-	 &test_mp4_recovery_parse_link_file},
+	{FN("mp4-recovery-tables-header-read-file"),
+	 &test_mp4_recovery_tables_header_read_file},
 	{FN("mp4-recovery-recover-file-from-paths"),
 	 &test_mp4_recovery_recover_file_from_paths},
-	{FN("mp4-recovery-recover-file"), &test_mp4_recovery_recover_file},
-
 	CU_TEST_INFO_NULL,
 };

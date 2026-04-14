@@ -64,11 +64,12 @@
 #define ASSETS_ROOT "/mnt/DFS/MULTIMEDIA_DATA"
 #define TEST_FILE_PATH "/tmp/test_mux.MP4"
 #define TEST_FILE_PATH_MRF "/tmp/test_mux.MRF"
-#define TEST_FILE_PATH_CHK "/tmp/test_mux.CHK"
 
+#define VMETA_FRAME_PROTO_EMPTY_COOKIE (UINT64_C(0x5F4E4F4D4554415F))
 
 extern CU_TestInfo g_mp4_test_demux[];
 extern CU_TestInfo g_mp4_test_mux[];
+extern CU_TestInfo g_mp4_test_mux_demux[];
 extern CU_TestInfo g_mp4_test_recovery[];
 extern CU_TestInfo g_mp4_test_utilities[];
 

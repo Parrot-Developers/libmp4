@@ -68,13 +68,10 @@ const char *mp4_video_codec_str(enum mp4_video_codec codec)
 
 const char *mp4_audio_codec_str(enum mp4_audio_codec codec)
 {
-	switch (codec) {
-	case MP4_AUDIO_CODEC_AAC_LC:
+	if (codec == MP4_AUDIO_CODEC_AAC_LC)
 		return "AAC_LC";
-	case MP4_AUDIO_CODEC_UNKNOWN:
-	default:
+	else
 		return "UNKNOWN";
-	}
 }
 
 

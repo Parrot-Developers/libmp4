@@ -121,10 +121,12 @@ int main(int argc, char *argv[])
 	int as_count = 0;
 	uint64_t step_ts = 0;
 	const uint64_t increment_ts = 100000; /* 100ms */
-	unsigned int cover_size, j;
+	unsigned int cover_size;
 	enum mp4_metadata_cover_type cover_type;
 
-	struct mp4_track_info info, video, audio;
+	struct mp4_track_info info;
+	struct mp4_track_info video;
+	struct mp4_track_info audio;
 	struct mp4_mux_config config = {
 		.filename = out,
 		.filemode = 0,
@@ -132,7 +134,6 @@ int main(int argc, char *argv[])
 		.creation_time = now,
 		.modification_time = now,
 		.tables_size_mbytes = MP4_MUX_DEFAULT_TABLE_SIZE_MB,
-		.recovery.link_file = NULL,
 		.recovery.tables_file = NULL,
 	};
 
@@ -278,7 +279,7 @@ int main(int argc, char *argv[])
 			}
 #endif
 
-			for (j = 0; j < meta_count; j++) {
+			for (unsigned int j = 0; j < meta_count; j++) {
 				if ((keys[j]) && (values[j])) {
 					mp4_mux_add_track_metadata(
 						mux,

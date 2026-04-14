@@ -55,11 +55,6 @@
 #	include <unistd.h>
 #endif
 
-static const uint32_t recovery_version = 2;
-
-/* recovery version 1: moov atom entirely written in mrf file. Not supported
- * anymore */
-/* recovery version 2: allows incremental tables */
 
 #ifdef _WIN32
 static ssize_t getline(char **lineptr, size_t *n, FILE *stream)
@@ -110,7 +105,7 @@ static char *get_mnt_fsname(const char *path)
 {
 #if BUILD_UTIL_LINUX_NG
 	FILE *fstab = setmntent("/etc/mtab", "r");
-	struct mntent *e;
+	const struct mntent *e;
 	char *devname = NULL;
 	size_t length_mnt = 0;
 	size_t curr_len = 0;
@@ -119,14 +114,13 @@ static char *get_mnt_fsname(const char *path)
 		goto out;
 
 	while ((e = getmntent(fstab))) {
-		curr_len = strlen(e->mnt_dir);
-		if (curr_len > length_mnt) {
-			if (strncmp(path, e->mnt_dir, curr_len) == 0) {
-				if (devname)
-					free(devname);
-				devname = strdup(e->mnt_fsname);
-				length_mnt = curr_len;
-			}
+		curr_len = mp4_validate_str_len(e->mnt_dir, PATH_MAX);
+		if ((curr_len > length_mnt) &&
+		    (strncmp(path, e->mnt_dir, curr_len) == 0)) {
+			if (devname)
+				free(devname);
+			devname = strdup(e->mnt_fsname);
+			length_mnt = curr_len;
 		}
 	}
 out:
@@ -174,367 +168,124 @@ out:
 }
 
 
-int mp4_prepare_link_file(int fd_link_file,
-			  const char *tables_file,
-			  const char *filepath,
-			  off_t tables_size_bytes,
-			  bool check_storage_uuid)
+int mp4_mux_recovery_tables_header_fill(
+	const struct mp4_mux *mux,
+	struct mp4_recovery_tables_header *header)
 {
 	int ret = 0;
-	char bl = '\n';
-	ssize_t written = 0;
-	char *str = NULL;
+	off_t curr_off = 0;
 	char *fsname = NULL;
-	char *uuid = NULL;
 
-	written = asprintf(&str, "%d\n", recovery_version);
-	if (written < 0) {
-		ret = -ENOMEM;
-		goto out;
-	}
-	written = write(fd_link_file, str, strlen(str));
-	if (written != (ssize_t)strlen(str)) {
-		ret = -errno;
-		goto out;
-	}
-	free(str);
+	ULOG_ERRNO_RETURN_ERR_IF(mux == NULL, EINVAL);
+	ULOG_ERRNO_RETURN_ERR_IF(header == NULL, EINVAL);
 
-	written = asprintf(&str, "%s\n", filepath);
-	if (written < 0) {
-		ret = -ENOMEM;
-		goto out;
-	}
-	written = write(fd_link_file, str, strlen(str));
-	if (written != (ssize_t)strlen(str)) {
-		ret = -errno;
-		goto out;
-	}
-	free(str);
-
-	written = asprintf(&str, "%s\n", tables_file);
-	if (written < 0) {
-		ret = -ENOMEM;
-		goto out;
-	}
-	written = write(fd_link_file, str, strlen(str));
-	if (written != (ssize_t)strlen(str)) {
-		ret = -errno;
-		goto out;
-	}
-	free(str);
-
-	written = asprintf(&str, "%jd\n", (intmax_t)tables_size_bytes);
-	if (written < 0) {
-		ret = -ENOMEM;
-		goto out;
-	}
-	written = write(fd_link_file, str, strlen(str));
-	if (written != (ssize_t)strlen(str)) {
+	/* Get current position */
+	curr_off = lseek(mux->recovery.fd_tables, 0, SEEK_CUR);
+	if (curr_off == -1) {
 		ret = -errno;
 		goto out;
 	}
 
-	if (check_storage_uuid) {
-		fsname = get_mnt_fsname(filepath);
-		if (fsname == NULL) {
-			ULOGE("get_mnt_fsname failed (%s)", filepath);
-			goto out;
-		} else {
-			uuid = get_uuid_from_mnt_fsname(fsname);
-			if (uuid == NULL) {
-				ULOGE("%s: get_uuid_from_mnt_fsname %s failed.",
-				      filepath,
-				      fsname);
-				goto out;
-			}
-		}
-	} else {
-		uuid = strdup(DEFAULT_UUID_MSG);
-	}
+	header->magic = MP4_RECOVERY_TABLES_HEADER_MAGIC;
+	header->version = MP4_RECOVERY_FORMAT_VERSION_CURRENT;
+	header->tables_size = (uint64_t)curr_off;
+	header->mux_tables_size = mux->data_offset / 1024 / 1024;
+	if (header->data_path)
+		free(header->data_path);
+	header->data_path = strdup(mux->filename);
+	header->data_path_length =
+		(uint32_t)mp4_validate_str_len(mux->filename, PATH_MAX);
 
-	written = write(fd_link_file, uuid, strlen(uuid));
-	if (written != (ssize_t)strlen(uuid)) {
-		ret = -errno;
+	if (!mux->recovery.check_storage_uuid) {
+		header->uuid = NULL;
 		goto out;
 	}
-	written = write(fd_link_file, &bl, 1);
-	if (written != (ssize_t)1) {
-		ret = -errno;
+	fsname = get_mnt_fsname(mux->filename);
+	if (fsname == NULL) {
+		ULOGE("get_mnt_fsname failed (%s)", mux->filename);
+		goto out;
+	}
+	if (header->uuid)
+		free(header->uuid);
+	header->uuid = get_uuid_from_mnt_fsname(fsname);
+	if (header->uuid == NULL) {
+		ULOGE("%s: get_uuid_from_mnt_fsname %s failed.",
+		      mux->filename,
+		      fsname);
 		goto out;
 	}
 
 out:
-	free(str);
 	free(fsname);
-	free(uuid);
 	return ret;
 }
 
 
-MP4_API int mp4_recovery_parse_link_file(const char *link_file,
-					 struct link_file_info *info)
+MP4_API int mp4_recovery_finalize(const char *tables_file,
+				  bool truncate_file,
+				  const char *override_data_path)
 {
 	int ret = 0;
-	int err = 0;
-	ssize_t read_char = 0;
-	FILE *f_link = NULL;
-	char *curr_recovery_version = NULL;
-	char *tables_size_b = NULL;
-	size_t len = 0;
-	char *end_ptr = NULL;
-	unsigned long parse_long;
+	struct mp4_recovery_tables_header header = {};
+	const char *data_path = override_data_path;
 
-	ULOG_ERRNO_RETURN_ERR_IF(link_file == NULL, EINVAL);
-	ULOG_ERRNO_RETURN_ERR_IF(info == NULL, EINVAL);
-
-	memset(info, 0, sizeof(*info));
-	f_link = fopen(link_file, "r");
-	if (f_link == NULL) {
-		ret = -errno;
-		ULOG_ERRNO("fopen ('%s')", -ret, link_file);
-		return ret;
-	}
-
-	/* recovery version */
-	if (getline(&curr_recovery_version, &len, f_link) < 0) {
-		ret = -EINVAL;
-		goto out;
-	}
-	info->recovery_version = atoi(curr_recovery_version);
-	if (info->recovery_version != recovery_version) {
-		ULOGE("unsupported recovery version (%d)",
-		      (int)info->recovery_version);
-		ret = -EINVAL;
-		goto out;
-	}
-
-	/* data_file */
-	read_char = getline(&info->data_file, &len, f_link);
-	if (read_char <= 0 || info->data_file == NULL) {
-		ULOGE("getline");
-		ret = -EINVAL;
-		goto out;
-	}
-	info->data_file[strlen(info->data_file) - 1] = '\0';
-
-	/* tables_file */
-	read_char = getline(&info->tables_file, &len, f_link);
-	if (read_char <= 0 || info->tables_file == NULL) {
-		ULOGE("getline");
-		ret = -EINVAL;
-		goto out;
-	}
-	info->tables_file[strlen(info->tables_file) - 1] = '\0';
-
-	/* tables size */
-	read_char = getline(&tables_size_b, &len, f_link);
-	if (read_char <= 0 || tables_size_b == NULL) {
-		ULOGE("getline");
-		ret = -EINVAL;
-		goto out;
-	}
-	tables_size_b[strlen(tables_size_b) - 1] = '\0';
-	errno = 0;
-	parse_long = strtoul(tables_size_b, &end_ptr, 0);
-	if (errno != 0 || tables_size_b[0] == '\0' || end_ptr[0] != '\0') {
-		ret = -errno;
-		ULOG_ERRNO("strtoul", -ret);
-		goto out;
-	}
-	if (parse_long == 0) {
-		ret = -EINVAL;
-		ULOGE("invalid tables size (%ld)", parse_long);
-		goto out;
-	}
-	info->tables_size_b = (size_t)parse_long;
-
-	/* uuid */
-	read_char = getline(&info->uuid, &len, f_link);
-	if (read_char > 0 && info->uuid != NULL) {
-		info->uuid[strlen(info->uuid) - 1] = '\0';
-		if (strncmp(DEFAULT_UUID_MSG,
-			    info->uuid,
-			    MIN(sizeof(DEFAULT_UUID_MSG),
-				strlen(info->uuid))) == 0) {
-			/* don't check storage uuid */
-			free(info->uuid);
-			info->uuid = NULL;
-		}
-	} else {
-		ULOGW("invalid storage uuid");
-		free(info->uuid);
-		info->uuid = NULL;
-	}
-
-out:
-	if (info->data_file == NULL || info->tables_file == NULL)
-		ret = -EINVAL;
-	if (f_link != NULL) {
-		err = fclose(f_link);
-		if (err < 0) {
-			ULOG_ERRNO("fclose", errno);
-			if (ret == 0)
-				ret = -errno;
-		}
-	}
-	free(curr_recovery_version);
-	free(tables_size_b);
-	if (ret < 0)
-		(void)mp4_recovery_link_file_info_destroy(info);
-	return ret;
-}
-
-
-MP4_API int mp4_recovery_link_file_info_destroy(struct link_file_info *info)
-{
-	ULOG_ERRNO_RETURN_ERR_IF(info == NULL, EINVAL);
-
-	free(info->tables_file);
-	info->tables_file = NULL;
-
-	free(info->data_file);
-	info->data_file = NULL;
-
-	free(info->uuid);
-	info->uuid = NULL;
-
-	return 0;
-}
-
-
-MP4_API int mp4_recovery_finalize(const char *link_file, bool truncate_file)
-{
-	struct link_file_info info = {0};
-	int ret = 0;
-	int err = 0;
-
-	ULOG_ERRNO_RETURN_ERR_IF(link_file == NULL, EINVAL);
-
-	ret = mp4_recovery_parse_link_file(link_file, &info);
-	if (ret < 0) {
-		ULOG_ERRNO("mp4_recovery_parse_link_file", -ret);
-		goto out;
-	}
+	ULOG_ERRNO_RETURN_ERR_IF(tables_file == NULL, EINVAL);
 
 	if (truncate_file) {
-		err = truncate(info.data_file, 0);
-		if (err < 0)
-			ULOG_ERRNO("truncate (%s)", errno, info.data_file);
+		if (data_path == NULL) {
+			ret = mp4_recovery_tables_header_read_file(tables_file,
+								   &header);
+			if (ret < 0) {
+				ULOG_ERRNO(
+					"mp4_recovery_tables_header_read_file",
+					-ret);
+				goto out;
+			}
+			data_path = header.data_path;
+		}
+
+		ret = truncate(data_path, 0);
+		if (ret < 0) {
+			ret = -errno;
+			ULOG_ERRNO("truncate (%s)", -ret, data_path);
+		}
 	}
 
-	err = remove(info.tables_file);
-	if (err < 0)
-		ULOG_ERRNO("remove (%s)", errno, info.tables_file);
-
 out:
-	err = remove(link_file);
-	if (err < 0)
-		ULOG_ERRNO("remove (%s)", errno, link_file);
+	ret = remove(tables_file);
+	if (ret < 0) {
+		ret = -errno;
+		ULOG_ERRNO("remove (%s)", -ret, tables_file);
+	}
 
-	(void)mp4_recovery_link_file_info_destroy(&info);
+	(void)mp4_recovery_tables_header_clear(&header);
+
 	return ret;
 }
 
 
-MP4_API int mp4_recovery_recover_file(const char *link_file,
-				      char **error_msg,
-				      char **recovered_file)
+static int
+mp4_recovery_mux_open(const char *data_file,
+		      const char *tables_file,
+		      const struct mp4_recovery_tables_header *header,
+		      char **error_msg,
+		      char **recovered_file)
 {
-	int ret = 0;
-	char *fsname = NULL;
-	char *uuid2 = NULL;
-	struct mp4_mux *mux;
-	struct mp4_mux_config config = {};
-	struct stat st_tables;
-	struct stat st_data;
-	struct link_file_info info = {0};
+	int ret;
+	struct mp4_mux *mux = NULL;
+	size_t tables_size_mbytes = header->mux_tables_size / 1024 / 1024;
+	struct mp4_mux_config config = {
+		.filename = data_file,
+		.timescale = 1000000, /* unused - can't be 0 for mux_open */
+		.creation_time = 1000, /* unused - can't be 0 for mux_open */
+		.modification_time =
+			1000, /* unused - can't be 0 for mux_open */
+		.tables_size_mbytes = (tables_size_mbytes != 0)
+					      ? tables_size_mbytes
+					      : MP4_MUX_DEFAULT_TABLE_SIZE_MB,
+		.recovery.tables_file = NULL,
+	};
 
-	ULOG_ERRNO_RETURN_ERR_IF(error_msg == NULL, EINVAL);
-	ULOG_ERRNO_RETURN_ERR_IF(link_file == NULL, EINVAL);
-
-	*error_msg = NULL;
-	if (recovered_file != NULL)
-		*recovered_file = NULL;
-
-	ret = mp4_recovery_parse_link_file(link_file, &info);
-	if (ret < 0) {
-		*error_msg = strdup("failed to parse link file");
-		ULOG_ERRNO("mp4_recovery_parse_link_file", -ret);
-		ULOGE("%s (%s)", *error_msg, link_file);
-		goto out;
-	}
-
-	if (access(info.data_file, F_OK)) {
-		*error_msg = strdup("failed to find data file");
-		ULOGE("%s (%s)", *error_msg, info.data_file);
-		ret = -ENOENT;
-		goto out;
-	}
-
-	if (info.uuid != NULL) {
-		fsname = get_mnt_fsname(info.data_file);
-		uuid2 = get_uuid_from_mnt_fsname(fsname);
-		if (uuid2 == NULL) {
-			*error_msg = strdup("cannot get storage UUID");
-			ULOGE("%s (%s)", *error_msg, info.data_file);
-			ret = -EAGAIN;
-			goto out;
-		}
-		if (strlen(uuid2) != strlen(info.uuid) ||
-		    strcmp(info.uuid, uuid2) != 0) {
-			*error_msg = strdup("storage uuid doesn't match");
-			ULOGE("%s (%s %s)", *error_msg, info.uuid, uuid2);
-			ret = -EAGAIN;
-			goto out;
-		}
-	}
-
-	if (access(info.tables_file, F_OK)) {
-		*error_msg = strdup("failed to find tables file");
-		ULOGE("%s (%s)", *error_msg, info.tables_file);
-		ret = -ENOENT;
-		goto out;
-	}
-
-	if (stat(info.tables_file, &st_tables) < 0) {
-		ret = -errno;
-		*error_msg = strdup("invalid tables file");
-		ULOGE("%s (%s)", *error_msg, info.tables_file);
-		goto out;
-	}
-
-	if (stat(info.data_file, &st_data) < 0) {
-		ret = -errno;
-		*error_msg = strdup("invalid data file");
-		ULOGE("%s (%s)", *error_msg, info.data_file);
-		goto out;
-	}
-
-	if (st_tables.st_size == 0) {
-		/* Record was probably stopped before any sync */
-		*error_msg = strdup("failed to parse tables file");
-		ULOGE("%s (%s): empty tables file (record probably stopped"
-		      " before any sync)",
-		      *error_msg,
-		      info.tables_file);
-		ret = -ENODATA;
-		goto out;
-	}
-
-	ULOGI("starting recovery of file: %s "
-	      "using recovery file path: %s",
-	      info.data_file,
-	      info.tables_file);
-
-	config.filename = info.data_file;
-	config.timescale = 1000000; /* unused - can't be 0 for mux_open */
-	config.creation_time = 1000; /* unused - can't be 0 for mux_open */
-	config.modification_time = 1000; /* unused - can't be 0 for mux_open */
-	config.tables_size_mbytes = info.tables_size_b / 1024 / 1024;
-	if (config.tables_size_mbytes == 0)
-		config.tables_size_mbytes = MP4_MUX_DEFAULT_TABLE_SIZE_MB;
-	config.recovery.link_file = NULL;
-	config.recovery.tables_file = NULL;
 	ret = mp4_mux_open(&config, &mux);
 	if (ret < 0) {
 		ULOG_ERRNO("mp4_mux_open", -ret);
@@ -542,18 +293,21 @@ MP4_API int mp4_recovery_recover_file(const char *link_file,
 		goto out;
 	}
 
-	ret = mp4_mux_fill_from_file(info.tables_file, mux, error_msg);
-	if (ret < 0)
+	ret = mp4_mux_fill_from_file(header, tables_file, mux, error_msg);
+	if (ret < 0) {
+		*error_msg = strdup("failed to open data_file");
 		ULOG_ERRNO("recovery failed (%s)", -ret, *error_msg);
+	}
 
 	ret = mp4_mux_close(mux);
 	if (ret < 0) {
-		ULOG_ERRNO("mp4_mux_close", -ret);
+		*error_msg = strdup("failed to rewrite data_file");
+		ULOG_ERRNO("recovery failed (%s)", -ret, *error_msg);
 		goto out;
 	}
 
 	if (recovered_file != NULL) {
-		*recovered_file = strdup(info.data_file);
+		*recovered_file = strdup(data_file);
 		if (*recovered_file == NULL) {
 			ret = -ENOMEM;
 			ULOG_ERRNO("strdup", -ret);
@@ -561,70 +315,192 @@ MP4_API int mp4_recovery_recover_file(const char *link_file,
 	}
 
 out:
-	free(fsname);
-	free(uuid2);
-	(void)mp4_recovery_link_file_info_destroy(&info);
 	return ret;
 }
 
 
-MP4_API int mp4_recovery_recover_file_from_paths(const char *link_file,
-						 const char *tables_file,
+static int check_file_integrity(const char *file, bool tables, char **error_msg)
+{
+	int ret = 0;
+	struct stat st_stats;
+
+	if (file == NULL) {
+		*error_msg = strdup("null tables file");
+		ULOGE("%s", *error_msg);
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (access(file, F_OK)) {
+		*error_msg = strdup(tables ? "failed to access tables file"
+					   : "failed to access data file");
+		ULOGE("%s (%s)", *error_msg, file);
+		ret = -ENOENT;
+		goto out;
+	}
+
+	if (stat(file, &st_stats) < 0) {
+		ret = -errno;
+		*error_msg = strdup(tables ? "invalid tables file"
+					   : "invalid data file");
+		ULOGE("%s (%s)", *error_msg, file);
+		goto out;
+	}
+
+	if (tables && (st_stats.st_size == 0)) {
+		/* Record was probably stopped before any sync */
+		*error_msg = strdup("failed to parse tables file");
+		ULOGE("%s (%s): empty tables file (record probably stopped"
+		      " before any sync)",
+		      *error_msg,
+		      file);
+		ret = -ENODATA;
+		goto out;
+	}
+
+out:
+	return ret;
+}
+
+
+MP4_API int mp4_recovery_recover_file_from_paths(const char *tables_file,
 						 const char *data_file,
 						 char **error_msg,
 						 char **recovered_file)
 {
 	int ret = 0;
-	struct link_file_info info = {0};
-	int fd_link;
-	struct stat st_tables;
-	struct stat st_data;
+	struct mp4_recovery_tables_header header = {};
+	int fd_tables;
 
-	ULOG_ERRNO_RETURN_ERR_IF(link_file == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(tables_file == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(data_file == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(error_msg == NULL, EINVAL);
 
-	fd_link = open(link_file, O_WRONLY);
-	if (fd_link < 0) {
+	fd_tables = open(tables_file, O_RDWR);
+	if (fd_tables < 0) {
 		ret = -errno;
-		*error_msg = strdup("failed to parse link file");
-		ULOG_ERRNO("open:'%s'", -ret, link_file);
+		*error_msg = strdup("failed to parse tables file");
+		ULOG_ERRNO("open:'%s'", -ret, tables_file);
 		return ret;
 	}
 
-	if (stat(tables_file, &st_tables) < 0) {
-		ret = -errno;
-		*error_msg = strdup("invalid tables file");
+	ret = check_file_integrity(tables_file, true, error_msg);
+	if (ret < 0)
+		goto out;
+
+	ret = check_file_integrity(data_file, false, error_msg);
+	if (ret < 0)
+		goto out;
+
+	ret = mp4_recovery_tables_header_read_fd(fd_tables, &header);
+	if (ret < 0) {
+		*error_msg = strdup("failed to parse tables file");
 		ULOGE("%s (%s)", *error_msg, tables_file);
-		goto error;
+		goto out;
 	}
 
-	if (stat(data_file, &st_data) < 0) {
-		ret = -errno;
-		*error_msg = strdup("invalid data file");
-		ULOGE("%s (%s)", *error_msg, data_file);
-		goto error;
+	if (header.tables_size == 0) {
+		/* Record was probably stopped before any sync */
+		*error_msg = strdup("failed to parse tables file");
+		ULOGE("%s (%s): empty tables file (record probably stopped"
+		      " before any sync)",
+		      *error_msg,
+		      tables_file);
+		ret = -ENODATA;
+		goto out;
 	}
 
-	ret = mp4_recovery_parse_link_file(link_file, &info);
+	ret = mp4_recovery_mux_open(
+		data_file, tables_file, &header, error_msg, recovered_file);
+	if (ret < 0) {
+		ULOG_ERRNO("mp4_recovery_mux_open", -ret);
+		goto out;
+	}
+
+out:
+	close(fd_tables);
+	(void)mp4_recovery_tables_header_clear(&header);
+	return ret;
+}
+
+
+MP4_API int mp4_recovery_recover_file(const char *tables_file,
+				      char **error_msg,
+				      char **recovered_file)
+{
+	int ret = 0;
+	char *fsname = NULL;
+	char *uuid2 = NULL;
+	struct mp4_recovery_tables_header header = {};
+
+	ULOG_ERRNO_RETURN_ERR_IF(tables_file == NULL, EINVAL);
+	ULOG_ERRNO_RETURN_ERR_IF(error_msg == NULL, EINVAL);
+
+	*error_msg = NULL;
+	if (recovered_file != NULL)
+		*recovered_file = NULL;
+
+	ret = check_file_integrity(tables_file, true, error_msg);
+	if (ret < 0)
+		goto out;
+
+
+	ret = mp4_recovery_tables_header_read_file(tables_file, &header);
 	if (ret < 0) {
 		*error_msg = strdup("failed to parse link file");
-		ULOGE("%s (%s)", *error_msg, link_file);
-		goto error;
+		ULOG_ERRNO("mp4_recovery_parse_tables_file", -ret);
+		ULOGE("%s (%s)", *error_msg, tables_file);
+		goto out;
 	}
 
-	ret = mp4_prepare_link_file(
-		fd_link, tables_file, data_file, info.tables_size_b, false);
+	if (header.tables_size == 0) {
+		/* Record was probably stopped before any sync */
+		*error_msg = strdup("failed to parse tables file");
+		ULOGE("%s (%s): empty tables file (record probably stopped"
+		      " before any sync)",
+		      *error_msg,
+		      tables_file);
+		ret = -ENODATA;
+		goto out;
+	}
+
+	ret = check_file_integrity(header.data_path, false, error_msg);
+	if (ret < 0)
+		goto out;
+
+	if (header.uuid_length != 0) {
+		fsname = get_mnt_fsname(header.data_path);
+		uuid2 = get_uuid_from_mnt_fsname(fsname);
+		if (uuid2 == NULL) {
+			*error_msg = strdup("cannot get storage UUID");
+			ULOGE("%s (%s)", *error_msg, header.data_path);
+			ret = -EAGAIN;
+			goto out;
+		}
+		size_t len_uuid1 = mp4_validate_str_len(header.uuid, NAME_MAX);
+		size_t len_uuid2 = mp4_validate_str_len(uuid2, NAME_MAX);
+		if ((len_uuid1 == 0) || (len_uuid2 == 0) ||
+		    (strcmp(header.uuid, uuid2) != 0)) {
+			*error_msg = strdup("storage uuid doesn't match");
+			ULOGE("%s (%s %s)", *error_msg, header.uuid, uuid2);
+			ret = -EAGAIN;
+			goto out;
+		}
+	}
+
+	ret = mp4_recovery_mux_open(header.data_path,
+				    tables_file,
+				    &header,
+				    error_msg,
+				    recovered_file);
 	if (ret < 0) {
-		ULOG_ERRNO("mp4_prepare_link_file", -ret);
-		goto error;
+		ULOG_ERRNO("mp4_recovery_mux_open", -ret);
+		goto out;
 	}
-	close(fd_link);
-	(void)mp4_recovery_link_file_info_destroy(&info);
-	return mp4_recovery_recover_file(link_file, error_msg, recovered_file);
 
-error:
-	close(fd_link);
+out:
+	free(fsname);
+	free(uuid2);
+	(void)mp4_recovery_tables_header_clear(&header);
 	return ret;
 }

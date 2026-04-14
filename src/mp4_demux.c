@@ -34,29 +34,36 @@
 
 static int mp4_metadata_build(struct mp4_file *mp4)
 {
-	unsigned int i, k = 0, metaCount = 0, udtaCount = 0, xyzCount = 0;
+	unsigned int k = 0;
+	unsigned int metaCount = 0;
+	unsigned int udtaCount = 0;
+	unsigned int xyzCount = 0;
 
-	for (i = 0; i < mp4->metaMetadataCount; i++) {
-		if ((mp4->metaMetadataValue[i]) &&
-		    (strlen(mp4->metaMetadataValue[i]) > 0) &&
-		    (mp4->metaMetadataKey[i]) &&
-		    (strlen(mp4->metaMetadataKey[i]) > 0))
+	for (unsigned int i = 0; i < mp4->metaMetadataCount; i++) {
+		if ((mp4_validate_str_len(mp4->metaMetadataValue[i],
+					  METADATA_VALUE_MAX) > 0) &&
+		    (mp4_validate_str_len(mp4->metaMetadataKey[i], NAME_MAX) >
+		     0))
 			metaCount++;
 	}
 
-	for (i = 0; i < mp4->udtaMetadataCount; i++) {
-		if ((mp4->udtaMetadataValue[i]) &&
-		    (strlen(mp4->udtaMetadataValue[i]) > 0) &&
-		    (mp4->udtaMetadataKey[i]) &&
-		    (strlen(mp4->udtaMetadataKey[i]) > 0))
+	for (unsigned int i = 0; i < mp4->udtaMetadataCount; i++) {
+		if ((mp4_validate_str_len(mp4->udtaMetadataValue[i],
+					  METADATA_VALUE_MAX) > 0) &&
+		    (mp4_validate_str_len(mp4->udtaMetadataKey[i], NAME_MAX) >
+		     0))
 			udtaCount++;
 	}
 
-	if ((mp4->udtaLocationValue) && (strlen(mp4->udtaLocationValue) > 0) &&
-	    (mp4->udtaLocationKey) && (strlen(mp4->udtaLocationKey) > 0))
+	if ((mp4_validate_str_len(mp4->udtaLocationValue, METADATA_VALUE_MAX) >
+	     0) &&
+	    (mp4_validate_str_len(mp4->udtaLocationKey, NAME_MAX) > 0))
 		xyzCount++;
 
 	mp4->finalMetadataCount = metaCount + udtaCount + xyzCount;
+
+	if (mp4->finalMetadataCount == 0)
+		goto cover;
 
 	mp4->finalMetadataKey = calloc(mp4->finalMetadataCount, sizeof(char *));
 	if (mp4->finalMetadataKey == NULL) {
@@ -71,35 +78,42 @@ static int mp4_metadata_build(struct mp4_file *mp4)
 		return -ENOMEM;
 	}
 
-	for (i = 0; i < mp4->metaMetadataCount; i++) {
-		if ((mp4->metaMetadataValue[i]) &&
-		    (strlen(mp4->metaMetadataValue[i]) > 0) &&
-		    (mp4->metaMetadataKey[i]) &&
-		    (strlen(mp4->metaMetadataKey[i]) > 0)) {
+	for (unsigned int i = 0; i < mp4->metaMetadataCount; i++) {
+		if (k >= mp4->finalMetadataCount)
+			break;
+		if ((mp4_validate_str_len(mp4->metaMetadataValue[i],
+					  METADATA_VALUE_MAX) > 0) &&
+		    (mp4_validate_str_len(mp4->metaMetadataKey[i], NAME_MAX) >
+		     0)) {
 			mp4->finalMetadataKey[k] = mp4->metaMetadataKey[i];
 			mp4->finalMetadataValue[k] = mp4->metaMetadataValue[i];
 			k++;
 		}
 	}
 
-	for (i = 0; i < mp4->udtaMetadataCount; i++) {
-		if ((mp4->udtaMetadataValue[i]) &&
-		    (strlen(mp4->udtaMetadataValue[i]) > 0) &&
-		    (mp4->udtaMetadataKey[i]) &&
-		    (strlen(mp4->udtaMetadataKey[i]) > 0)) {
+	for (unsigned int i = 0; i < mp4->udtaMetadataCount; i++) {
+		if (k >= mp4->finalMetadataCount)
+			break;
+		if ((mp4_validate_str_len(mp4->udtaMetadataValue[i],
+					  METADATA_VALUE_MAX) > 0) &&
+		    (mp4_validate_str_len(mp4->udtaMetadataKey[i], NAME_MAX) >
+		     0)) {
 			mp4->finalMetadataKey[k] = mp4->udtaMetadataKey[i];
 			mp4->finalMetadataValue[k] = mp4->udtaMetadataValue[i];
 			k++;
 		}
 	}
 
-	if ((mp4->udtaLocationValue) && (strlen(mp4->udtaLocationValue) > 0) &&
-	    (mp4->udtaLocationKey) && (strlen(mp4->udtaLocationKey) > 0)) {
+	if ((mp4_validate_str_len(mp4->udtaLocationValue, METADATA_VALUE_MAX) >
+	     0) &&
+	    (mp4_validate_str_len(mp4->udtaLocationKey, NAME_MAX) > 0) &&
+	    (k < mp4->finalMetadataCount)) {
 		mp4->finalMetadataKey[k] = mp4->udtaLocationKey;
 		mp4->finalMetadataValue[k] = mp4->udtaLocationValue;
 		k++;
 	}
 
+cover:
 	if (mp4->metaCoverSize > 0) {
 		mp4->finalCoverSize = mp4->metaCoverSize;
 		mp4->finalCoverOffset = mp4->metaCoverOffset;
@@ -123,8 +137,8 @@ int mp4_demux_open(const char *filename, struct mp4_demux **ret_obj)
 	struct mp4_file *mp4;
 	int flags = O_RDONLY;
 
-	ULOG_ERRNO_RETURN_ERR_IF(filename == NULL, EINVAL);
-	ULOG_ERRNO_RETURN_ERR_IF(strlen(filename) == 0, EINVAL);
+	ULOG_ERRNO_RETURN_ERR_IF(mp4_validate_str_len(filename, PATH_MAX) == 0,
+				 EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(ret_obj == NULL, EINVAL);
 
 	demux = calloc(sizeof(*demux), 1);
@@ -238,12 +252,16 @@ int mp4_demux_close(struct mp4_demux *demux)
 }
 
 
-static int get_seek_sample(struct mp4_track *tk,
+static int get_seek_sample(const struct mp4_track *tk,
 			   int start,
 			   uint64_t requested_ts,
 			   enum mp4_seek_method method)
 {
-	int is_sync, prev_sync = -1, nearest, next, next_sync;
+	int is_sync;
+	int prev_sync = -1;
+	int nearest;
+	int next;
+	int next_sync;
 	uint64_t start_ts = tk->sampleDecodingTime[start];
 
 	switch (method) {
@@ -251,12 +269,16 @@ static int get_seek_sample(struct mp4_track *tk,
 		return start;
 	case MP4_SEEK_METHOD_PREVIOUS_SYNC:
 		is_sync = mp4_track_is_sync_sample(tk, start, &prev_sync);
-		if (is_sync)
+		if (is_sync) {
 			return start;
-		else if (prev_sync >= 0)
+		} else if (prev_sync >= 0) {
 			return prev_sync;
-		else
-			return -ENOENT;
+		} else {
+			return get_seek_sample(tk,
+					       start,
+					       requested_ts,
+					       MP4_SEEK_METHOD_NEXT_SYNC);
+		}
 	case MP4_SEEK_METHOD_NEAREST:
 		nearest = mp4_track_find_sample_by_time(
 			tk, requested_ts, MP4_TIME_CMP_NEAREST, 0, start);
@@ -292,12 +314,13 @@ static int get_seek_sample(struct mp4_track *tk,
 }
 
 
-static int get_metadata_sample_from_ref_track(struct mp4_track *ref_tk,
+static int get_metadata_sample_from_ref_track(const struct mp4_track *ref_tk,
 					      int ref_sample)
 {
 	int idx;
-	struct mp4_track *metatk = ref_tk->metadata;
-	uint64_t prev_sample_time = INT64_MAX, next_sample_time = INT64_MAX;
+	const struct mp4_track *metatk = ref_tk->metadata;
+	uint64_t prev_sample_time = INT64_MAX;
+	uint64_t next_sample_time = INT64_MAX;
 
 	if (!metatk)
 		return -ENOENT;
@@ -342,12 +365,12 @@ static int get_metadata_sample_from_ref_track(struct mp4_track *ref_tk,
 }
 
 
-int mp4_demux_seek(struct mp4_demux *demux,
+int mp4_demux_seek(const struct mp4_demux *demux,
 		   uint64_t time_offset,
 		   enum mp4_seek_method method)
 {
 	struct mp4_track *tk = NULL;
-	struct mp4_file *mp4;
+	const struct mp4_file *mp4;
 
 	ULOG_ERRNO_RETURN_ERR_IF(demux == NULL, EINVAL);
 
@@ -355,7 +378,8 @@ int mp4_demux_seek(struct mp4_demux *demux,
 
 	list_walk_entry_forward(&mp4->tracks, tk, node)
 	{
-		int found = 0, i, idx = 0;
+		int found = 0;
+		int idx = 0;
 		uint64_t ts =
 			mp4_usec_to_sample_time(time_offset, tk->timescale);
 		uint64_t newPendingSeekTime = 0;
@@ -369,7 +393,7 @@ int mp4_demux_seek(struct mp4_demux *demux,
 		while (((unsigned)start < tk->sampleCount - 1) &&
 		       (tk->sampleDecodingTime[start] < ts))
 			start++;
-		for (i = start; i >= 0; i--) {
+		for (int i = start; i >= 0; i--) {
 			if (tk->sampleDecodingTime[i] <= ts) {
 				idx = get_seek_sample(tk, i, ts, method);
 				if (idx < 0)
@@ -400,10 +424,10 @@ int mp4_demux_seek(struct mp4_demux *demux,
 }
 
 
-int mp4_demux_get_media_info(struct mp4_demux *demux,
+int mp4_demux_get_media_info(const struct mp4_demux *demux,
 			     struct mp4_media_info *media_info)
 {
-	struct mp4_file *mp4;
+	const struct mp4_file *mp4;
 
 	ULOG_ERRNO_RETURN_ERR_IF(demux == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(media_info == NULL, EINVAL);
@@ -428,7 +452,7 @@ int mp4_demux_get_media_info(struct mp4_demux *demux,
 }
 
 
-int mp4_demux_get_track_count(struct mp4_demux *demux)
+int mp4_demux_get_track_count(const struct mp4_demux *demux)
 {
 	ULOG_ERRNO_RETURN_ERR_IF(demux == NULL, EINVAL);
 
@@ -436,12 +460,12 @@ int mp4_demux_get_track_count(struct mp4_demux *demux)
 }
 
 
-int mp4_demux_get_track_info(struct mp4_demux *demux,
+int mp4_demux_get_track_info(const struct mp4_demux *demux,
 			     unsigned int track_idx,
 			     struct mp4_track_info *track_info)
 {
-	struct mp4_file *mp4;
-	struct mp4_track *tk = NULL;
+	const struct mp4_file *mp4;
+	const struct mp4_track *tk = NULL;
 
 	ULOG_ERRNO_RETURN_ERR_IF(demux == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(track_info == NULL, EINVAL);
@@ -503,11 +527,11 @@ int mp4_demux_get_track_info(struct mp4_demux *demux,
 
 
 int mp4_demux_get_track_video_decoder_config(
-	struct mp4_demux *demux,
+	const struct mp4_demux *demux,
 	unsigned int track_id,
 	struct mp4_video_decoder_config *vdc)
 {
-	struct mp4_file *mp4;
+	const struct mp4_file *mp4;
 	struct mp4_track *tk = NULL;
 
 	ULOG_ERRNO_RETURN_ERR_IF(demux == NULL, EINVAL);
@@ -566,12 +590,12 @@ int mp4_demux_get_track_video_decoder_config(
 }
 
 
-int mp4_demux_get_track_audio_specific_config(struct mp4_demux *demux,
+int mp4_demux_get_track_audio_specific_config(const struct mp4_demux *demux,
 					      unsigned int track_id,
 					      uint8_t **audio_specific_config,
 					      unsigned int *asc_size)
 {
-	struct mp4_file *mp4;
+	const struct mp4_file *mp4;
 	struct mp4_track *tk = NULL;
 
 	ULOG_ERRNO_RETURN_ERR_IF(demux == NULL, EINVAL);
@@ -608,7 +632,7 @@ int mp4_demux_get_track_audio_specific_config(struct mp4_demux *demux,
 }
 
 
-int mp4_demux_get_track_sample(struct mp4_demux *demux,
+int mp4_demux_get_track_sample(const struct mp4_demux *demux,
 			       unsigned int track_id,
 			       int advance,
 			       uint8_t *sample_buffer,
@@ -617,12 +641,14 @@ int mp4_demux_get_track_sample(struct mp4_demux *demux,
 			       unsigned int metadata_buffer_size,
 			       struct mp4_track_sample *track_sample)
 {
-	struct mp4_file *mp4;
+	const struct mp4_file *mp4;
 	struct mp4_track *tk = NULL;
 	int idx;
 	uint64_t sampleTime;
-	uint32_t sample_size, metadata_size;
-	uint64_t sample_offset, metadata_offset;
+	uint32_t sample_size;
+	uint32_t metadata_size;
+	uint64_t sample_offset;
+	uint64_t metadata_offset;
 
 	ULOG_ERRNO_RETURN_ERR_IF(demux == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(track_sample == NULL, EINVAL);
@@ -644,7 +670,7 @@ int mp4_demux_get_track_sample(struct mp4_demux *demux,
 	sample_offset = tk->sampleOffset[tk->nextSample];
 	track_sample->size = sample_size;
 	track_sample->offset = sample_offset;
-	if ((sample_buffer) && (sample_size > 0) &&
+	if (sample_buffer && (sample_size > 0) &&
 	    (sample_size <= sample_buffer_size)) {
 		off_t _ret = lseek(mp4->fd, sample_offset, SEEK_SET);
 		if (_ret == -1) {
@@ -654,18 +680,16 @@ int mp4_demux_get_track_sample(struct mp4_demux *demux,
 		ssize_t count = read(mp4->fd, sample_buffer, sample_size);
 		if (count == -1) {
 			track_sample->size = 0;
-			sample_size = 0;
 			_ret = -errno;
 			ULOG_ERRNO("read", -_ret);
 			return _ret;
 		} else if (count != (ssize_t)sample_size) {
 			track_sample->size = 0;
-			sample_size = 0;
 			_ret = -ENODATA;
 			ULOG_ERRNO("read", -_ret);
 			return _ret;
 		}
-	} else if ((sample_buffer) && (sample_size > sample_buffer_size)) {
+	} else if (sample_buffer && (sample_size > sample_buffer_size)) {
 		ULOGE("buffer too small (%d bytes, %d needed)",
 		      sample_buffer_size,
 		      sample_size);
@@ -673,9 +697,8 @@ int mp4_demux_get_track_sample(struct mp4_demux *demux,
 	}
 	sampleTime = tk->sampleDecodingTime[tk->nextSample];
 	if (tk->metadata) {
-		struct mp4_track *metatk = tk->metadata;
-		int idx =
-			get_metadata_sample_from_ref_track(tk, tk->nextSample);
+		const struct mp4_track *metatk = tk->metadata;
+		idx = get_metadata_sample_from_ref_track(tk, tk->nextSample);
 		if (idx < 0) {
 			ULOGD("no metadata available at sample time: %" PRIu64,
 			      sampleTime);
@@ -683,7 +706,7 @@ int mp4_demux_get_track_sample(struct mp4_demux *demux,
 			metadata_size = metatk->sampleSize[idx];
 			metadata_offset = metatk->sampleOffset[idx];
 			track_sample->metadata_size = metadata_size;
-			if ((metadata_buffer) && (metadata_size > 0) &&
+			if (metadata_buffer && (metadata_size > 0) &&
 			    (metadata_size <= metadata_buffer_size)) {
 				off_t _ret = lseek(
 					mp4->fd, metadata_offset, SEEK_SET);
@@ -702,7 +725,7 @@ int mp4_demux_get_track_sample(struct mp4_demux *demux,
 					ULOG_ERRNO("read", -_ret);
 					return _ret;
 				}
-			} else if ((metadata_buffer) &&
+			} else if (metadata_buffer &&
 				   (metadata_size > metadata_buffer_size)) {
 				ULOGE("buffer too small for metadata "
 				      "(%d bytes, %d needed)",
@@ -738,11 +761,11 @@ int mp4_demux_get_track_sample(struct mp4_demux *demux,
 }
 
 
-int mp4_demux_seek_to_track_prev_sample(struct mp4_demux *demux,
+int mp4_demux_seek_to_track_prev_sample(const struct mp4_demux *demux,
 					unsigned int track_id)
 {
-	struct mp4_file *mp4;
-	struct mp4_track *tk = NULL;
+	const struct mp4_file *mp4;
+	const struct mp4_track *tk = NULL;
 	int idx;
 	uint64_t ts;
 
@@ -767,12 +790,12 @@ int mp4_demux_seek_to_track_prev_sample(struct mp4_demux *demux,
 }
 
 
-int mp4_demux_seek_to_track_next_sample(struct mp4_demux *demux,
+int mp4_demux_seek_to_track_next_sample(const struct mp4_demux *demux,
 					unsigned int track_id,
 					bool resync)
 {
-	struct mp4_file *mp4;
-	struct mp4_track *tk = NULL;
+	const struct mp4_file *mp4;
+	const struct mp4_track *tk = NULL;
 	int idx;
 	uint64_t ts;
 
@@ -806,13 +829,13 @@ int mp4_demux_seek_to_track_next_sample(struct mp4_demux *demux,
 }
 
 
-int mp4_demux_get_track_prev_sample_time(struct mp4_demux *demux,
+int mp4_demux_get_track_prev_sample_time(const struct mp4_demux *demux,
 					 unsigned int track_id,
 					 uint64_t *sample_time)
 {
 	int ret = 0;
-	struct mp4_file *mp4;
-	struct mp4_track *tk = NULL;
+	const struct mp4_file *mp4;
+	const struct mp4_track *tk = NULL;
 	uint64_t prev_ts = 0;
 
 	ULOG_ERRNO_RETURN_ERR_IF(demux == NULL, EINVAL);
@@ -841,13 +864,13 @@ exit:
 }
 
 
-int mp4_demux_get_track_next_sample_time(struct mp4_demux *demux,
+int mp4_demux_get_track_next_sample_time(const struct mp4_demux *demux,
 					 unsigned int track_id,
 					 uint64_t *sample_time)
 {
 	int ret = 0;
-	struct mp4_file *mp4;
-	struct mp4_track *tk = NULL;
+	const struct mp4_file *mp4;
+	const struct mp4_track *tk = NULL;
 	uint64_t next_ts = 0;
 
 	ULOG_ERRNO_RETURN_ERR_IF(demux == NULL, EINVAL);
@@ -875,17 +898,19 @@ exit:
 }
 
 
-static int mp4_demux_get_track_sample_time(struct mp4_demux *demux,
+static int mp4_demux_get_track_sample_time(const struct mp4_demux *demux,
 					   unsigned int track_id,
 					   uint64_t time,
 					   int sync,
 					   enum mp4_time_cmp cmp,
 					   uint64_t *sample_time)
 {
-	struct mp4_file *mp4;
-	struct mp4_track *tk = NULL;
-	int idx, ret;
-	uint64_t ts = 0, sample_ts = 0;
+	const struct mp4_file *mp4;
+	const struct mp4_track *tk = NULL;
+	int idx;
+	int ret;
+	uint64_t ts = 0;
+	uint64_t sample_ts = 0;
 
 	ULOG_ERRNO_RETURN_ERR_IF(demux == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(sample_time == NULL, EINVAL);
@@ -916,7 +941,7 @@ exit:
 	return ret;
 }
 
-int mp4_demux_get_track_prev_sample_time_before(struct mp4_demux *demux,
+int mp4_demux_get_track_prev_sample_time_before(const struct mp4_demux *demux,
 						unsigned int track_id,
 						uint64_t time,
 						int sync,
@@ -927,7 +952,7 @@ int mp4_demux_get_track_prev_sample_time_before(struct mp4_demux *demux,
 }
 
 
-int mp4_demux_get_track_next_sample_time_after(struct mp4_demux *demux,
+int mp4_demux_get_track_next_sample_time_after(const struct mp4_demux *demux,
 					       unsigned int track_id,
 					       uint64_t time,
 					       int sync,
@@ -974,13 +999,13 @@ int mp4_demux_get_metadata_strings(struct mp4_demux *demux,
 }
 
 
-int mp4_demux_get_track_metadata_strings(struct mp4_demux *demux,
+int mp4_demux_get_track_metadata_strings(const struct mp4_demux *demux,
 					 unsigned int track_id,
 					 unsigned int *count,
 					 char ***keys,
 					 char ***values)
 {
-	struct mp4_file *mp4;
+	const struct mp4_file *mp4;
 	struct mp4_track *tk = NULL;
 
 	ULOG_ERRNO_RETURN_ERR_IF(demux == NULL, EINVAL);
@@ -1004,14 +1029,14 @@ int mp4_demux_get_track_metadata_strings(struct mp4_demux *demux,
 }
 
 
-int mp4_demux_get_metadata_cover(struct mp4_demux *demux,
+int mp4_demux_get_metadata_cover(const struct mp4_demux *demux,
 				 uint8_t *cover_buffer,
 				 unsigned int cover_buffer_size,
 				 unsigned int *cover_size,
 				 enum mp4_metadata_cover_type *cover_type)
 {
 	int ret;
-	struct mp4_file *mp4;
+	const struct mp4_file *mp4;
 
 	ULOG_ERRNO_RETURN_ERR_IF(demux == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(cover_size == NULL, EINVAL);
@@ -1022,7 +1047,7 @@ int mp4_demux_get_metadata_cover(struct mp4_demux *demux,
 		*cover_size = mp4->finalCoverSize;
 		if (cover_type)
 			*cover_type = mp4->finalCoverType;
-		if ((cover_buffer) &&
+		if (cover_buffer &&
 		    (mp4->finalCoverSize <= cover_buffer_size)) {
 			off_t _ret =
 				lseek(mp4->fd, mp4->finalCoverOffset, SEEK_SET);

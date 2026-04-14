@@ -90,6 +90,7 @@ LOCAL_SRC_FILES := \
 	tests/mp4_test.c \
 	tests/mp4_test_demux.c \
 	tests/mp4_test_mux.c \
+	tests/mp4_test_mux_demux.c \
 	tests/mp4_test_recovery.c \
 	tests/mp4_test_utilities.c
 LOCAL_LIBRARIES := \

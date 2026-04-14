@@ -37,6 +37,8 @@
 #	include <unistd.h>
 /* For iov/writev */
 #	include <sys/uio.h>
+#else
+#	include <windows.h>
 #endif
 #define MP4_MUX_TABLES_GROW_SIZE 128
 
@@ -64,7 +66,7 @@ static ssize_t writev(int fd, const struct iovec *iov, int iovcnt)
 #endif
 
 
-struct mp4_mux_track *mp4_mux_track_find_by_handle(struct mp4_mux *mux,
+struct mp4_mux_track *mp4_mux_track_find_by_handle(const struct mp4_mux *mux,
 						   uint32_t track_handle)
 {
 	struct mp4_mux_track *_track = NULL;
@@ -203,12 +205,15 @@ int mp4_mux_grow_sync(struct mp4_mux_track *track, int new_sync)
 }
 
 
-int mp4_mux_track_compute_tts(struct mp4_mux *mux, struct mp4_mux_track *track)
+int mp4_mux_track_compute_tts(const struct mp4_mux *mux,
+			      struct mp4_mux_track *track)
 {
 	int ret;
-	uint32_t i, nsamples;
-	uint64_t prev_dts, next_dts;
-	uint32_t diff, prev_diff;
+	uint32_t nsamples;
+	uint64_t prev_dts;
+	uint64_t next_dts;
+	uint32_t diff;
+	uint32_t prev_diff;
 
 	if (track == NULL)
 		return 0;
@@ -224,7 +229,7 @@ int mp4_mux_track_compute_tts(struct mp4_mux *mux, struct mp4_mux_track *track)
 
 	prev_diff = UINT32_MAX;
 	prev_dts = track->samples.decoding_times[0];
-	for (i = 1; i < nsamples; i++) {
+	for (uint32_t i = 1; i < nsamples; i++) {
 		next_dts = track->samples.decoding_times[i];
 		diff = next_dts - prev_dts;
 		/* Convert to timescale */
@@ -266,7 +271,8 @@ int mp4_mux_track_compute_tts(struct mp4_mux *mux, struct mp4_mux_track *track)
 
 static void mp4_mux_track_destroy(struct mp4_mux_track *track)
 {
-	struct mp4_mux_metadata *meta, *tmp;
+	struct mp4_mux_metadata *meta;
+	struct mp4_mux_metadata *tmp;
 
 	if (track == NULL)
 		return;
@@ -317,9 +323,10 @@ static void mp4_mux_track_destroy(struct mp4_mux_track *track)
 
 static void mp4_mux_free(struct mp4_mux *mux)
 {
-	struct mp4_mux_track *track, *ttmp;
-	struct mp4_mux_metadata *meta, *mtmp;
-	int len_recovery_path = 0;
+	struct mp4_mux_track *track;
+	struct mp4_mux_track *ttmp;
+	struct mp4_mux_metadata *meta;
+	struct mp4_mux_metadata *mtmp;
 
 	if (mux == NULL)
 		return;
@@ -343,16 +350,11 @@ static void mp4_mux_free(struct mp4_mux *mux)
 	}
 
 	if (mux->recovery.tables_file != NULL &&
-	    mux->recovery.link_file != NULL &&
 	    mux->recovery.tmp_tables_file != NULL &&
 	    !mux->recovery.failed_in_close) {
-		if (mux->recovery.fd_link != -1)
-			close(mux->recovery.fd_link);
 		if (mux->recovery.fd_tables != -1)
 			close(mux->recovery.fd_tables);
 
-		free(mux->recovery.link_file);
-		len_recovery_path = strlen(mux->recovery.tables_file);
 		/* tmp_tables_file file is supposed to be deleted when writing
 		 * tables but if something wrong happenened we try to delete it
 		 * here also
@@ -373,7 +375,7 @@ static void mp4_mux_free(struct mp4_mux *mux)
 
 static int
 mp4_mux_track_set_avc_decoder_config(struct mp4_mux_track *track,
-				     struct mp4_video_decoder_config *vdc)
+				     const struct mp4_video_decoder_config *vdc)
 {
 	int ret = 0;
 
@@ -408,9 +410,9 @@ error:
 }
 
 
-static int
-mp4_mux_track_set_hevc_decoder_config(struct mp4_mux_track *track,
-				      struct mp4_video_decoder_config *vdc)
+static int mp4_mux_track_set_hevc_decoder_config(
+	struct mp4_mux_track *track,
+	const struct mp4_video_decoder_config *vdc)
 {
 	int ret = 0;
 
@@ -460,6 +462,57 @@ error:
 }
 
 
+static int allocate_file_space(int fd, off_t size)
+{
+#ifdef _WIN32
+	HANDLE h = (HANDLE)_get_osfhandle(fd);
+	LARGE_INTEGER li;
+	li.QuadPart = size;
+	if (!SetFilePointerEx(h, li, NULL, FILE_BEGIN)) {
+		ULOG_ERRNO("SetFilePointerEx", GetLastError());
+		return -EINVAL;
+	}
+	if (!SetEndOfFile(h)) {
+		ULOG_ERRNO("SetEndOfFile", GetLastError());
+		return -EINVAL;
+	}
+	if (!SetFileValidData(h, size)) {
+		ULOG_ERRNO("SetFileValidData", GetLastError());
+		return -EINVAL;
+	}
+	return 0;
+#elif __APPLE__
+	fstore_t store = {
+		.fst_flags = F_ALLOCATECONTIG,
+		.fst_posmode = F_PEOFPOSMODE,
+		.fst_offset = 0,
+		.fst_length = size,
+	};
+	/* try contiguous */
+	if (fcntl(fd, F_PREALLOCATE, &store) == -1) {
+		store.fst_flags = F_ALLOCATEALL;
+		/* if error, try non-contiguous */
+		if (fcntl(fd, F_PREALLOCATE, &store) == -1) {
+			int err = -errno;
+			ULOG_ERRNO("fcntl", -err);
+			return err;
+		}
+	}
+	if (ftruncate(fd, size) == -1) {
+		int err = -errno;
+		ULOG_ERRNO("ftruncate", -err);
+		return err;
+	}
+	return 0;
+#else
+	int ret = posix_fallocate(fd, 0, size);
+	if (ret != 0)
+		ULOG_ERRNO("posix_fallocate", ret);
+	return -ret;
+#endif
+}
+
+
 MP4_API int mp4_mux_open(const struct mp4_mux_config *config,
 			 struct mp4_mux **ret_obj)
 {
@@ -470,6 +523,7 @@ MP4_API int mp4_mux_open(const struct mp4_mux_config *config,
 	bool recovery_enabled = false;
 	mode_t mode;
 	int flags = O_WRONLY | O_CREAT;
+	struct mp4_recovery_tables_header header = {};
 
 #ifdef O_BINARY
 	flags |= O_BINARY;
@@ -477,18 +531,12 @@ MP4_API int mp4_mux_open(const struct mp4_mux_config *config,
 
 	ULOG_ERRNO_RETURN_ERR_IF(config == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(ret_obj == NULL, EINVAL);
-	ULOG_ERRNO_RETURN_ERR_IF(config->filename == NULL, EINVAL);
-	ULOG_ERRNO_RETURN_ERR_IF(strlen(config->filename) == 0, EINVAL);
+	ULOG_ERRNO_RETURN_ERR_IF(
+		mp4_validate_str_len(config->filename, PATH_MAX) == 0, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(config->tables_size_mbytes == 0, EINVAL);
 
-	if (config->recovery.link_file != NULL ||
-	    config->recovery.tables_file != NULL) {
-		ULOG_ERRNO_RETURN_ERR_IF(config->recovery.link_file == NULL,
-					 EINVAL);
-		ULOG_ERRNO_RETURN_ERR_IF(config->recovery.tables_file == NULL,
-					 EINVAL);
+	if (config->recovery.tables_file != NULL)
 		recovery_enabled = true;
-	}
 
 	mux = calloc(1, sizeof(*mux));
 	if (mux == NULL) {
@@ -567,16 +615,6 @@ MP4_API int mp4_mux_open(const struct mp4_mux_config *config,
 
 	*ret_obj = mux;
 	if (recovery_enabled) {
-		/* link file to link tables, data and uuid */
-		mux->recovery.link_file = strdup(config->recovery.link_file);
-		mux->recovery.fd_link =
-			open(mux->recovery.link_file, flags, S_IRUSR | S_IWUSR);
-		if (mux->recovery.fd_link == -1) {
-			ret = -errno;
-			ULOG_ERRNO("open:'%s'", -ret, mux->recovery.link_file);
-			goto error;
-		}
-
 		/* tables file to record tables */
 		mux->recovery.tables_file =
 			strdup(config->recovery.tables_file);
@@ -589,6 +627,15 @@ MP4_API int mp4_mux_open(const struct mp4_mux_config *config,
 			goto error;
 		}
 
+		if (config->recovery.allocate_space_for_tables_file) {
+			ret = allocate_file_space(mux->recovery.fd_tables,
+						  mux->data_offset);
+			if (ret != 0) {
+				ULOG_ERRNO("allocate_file_space", -ret);
+				goto error;
+			}
+		}
+
 		ret = asprintf(&mux->recovery.tmp_tables_file,
 			       "%s.TMP",
 			       mux->recovery.tables_file);
@@ -598,19 +645,30 @@ MP4_API int mp4_mux_open(const struct mp4_mux_config *config,
 			goto error;
 		}
 
-		ret = mp4_prepare_link_file(
-			mux->recovery.fd_link,
-			mux->recovery.tables_file,
-			mux->filename,
-			mux->data_offset,
-			config->recovery.check_storage_uuid);
-		if (ret < 0) {
-			ULOG_ERRNO("mp4_prepare_link_file", -ret);
+		err = lseek(mux->recovery.fd_tables, 0, SEEK_SET);
+		if (err < 0) {
+			ret = -errno;
+			ULOG_ERRNO("lseek", -ret);
 			goto error;
 		}
+
+		ret = mp4_mux_recovery_tables_header_fill(mux, &header);
+		if (ret < 0) {
+			ULOG_ERRNO("mp4_mux_recovery_tables_header_fill", -ret);
+			goto error;
+		}
+
+		/* Reserve space for header */
+		ret = mp4_recovery_tables_header_write(
+			mux->recovery.fd_tables, &header, true);
+		if (ret < 0) {
+			ULOG_ERRNO("mp4_recovery_tables_header_write", -ret);
+			goto error;
+		}
+
+		mux->recovery.check_storage_uuid =
+			config->recovery.check_storage_uuid;
 	} else {
-		mux->recovery.link_file = NULL;
-		mux->recovery.fd_link = -1;
 		mux->recovery.tables_file = NULL;
 		mux->recovery.fd_tables = -1;
 	}
@@ -630,28 +688,20 @@ MP4_API int mp4_mux_open(const struct mp4_mux_config *config,
 		return ret;
 	}
 #endif
+	(void)mp4_recovery_tables_header_clear(&header);
 	return ret;
 error:
 	if (mux == NULL)
 		return ret;
-	if (recovery_enabled) {
-		if (mux->recovery.fd_link > 0) {
-			err = remove(mux->recovery.link_file);
-			if (err < 0) {
-				ULOG_ERRNO("remove (%s)",
-					   errno,
-					   mux->recovery.link_file);
-			}
-		}
-		if (mux->recovery.fd_tables > 0) {
-			err = remove(mux->recovery.tables_file);
-			if (err < 0) {
-				ULOG_ERRNO("remove (%s)",
-					   errno,
-					   mux->recovery.tables_file);
-			}
+	if (recovery_enabled && (mux->recovery.fd_tables > 0)) {
+		err = remove(mux->recovery.tables_file);
+		if (err < 0) {
+			ULOG_ERRNO("remove (%s)",
+				   errno,
+				   mux->recovery.tables_file);
 		}
 	}
+	(void)mp4_recovery_tables_header_clear(&header);
 	mp4_mux_free(mux);
 	return ret;
 }
@@ -687,7 +737,8 @@ mp4_mux_track_type_from_priority(unsigned int priority)
 int mp4_mux_sort_tracks(struct mp4_mux *mux)
 {
 	uint32_t track_id;
-	struct mp4_mux_track *track = NULL, *tmp = NULL;
+	struct mp4_mux_track *track = NULL;
+	struct mp4_mux_track *tmp = NULL;
 	struct list_node new_list;
 
 	ULOG_ERRNO_RETURN_ERR_IF(mux == NULL, EINVAL);
@@ -812,7 +863,11 @@ static int mp4_mux_sync_internal(struct mp4_mux *mux, bool allow_boxes_after)
 		/* Skip empty tracks */
 		if (track->samples.count == 0)
 			continue;
-		struct mp4_box *trak, *mdia, *minf, *dinf, *stbl;
+		struct mp4_box *trak;
+		struct mp4_box *mdia;
+		struct mp4_box *minf;
+		struct mp4_box *dinf;
+		struct mp4_box *stbl;
 		trak = mp4_box_new_container(moov, MP4_TRACK_BOX);
 		if (trak == NULL) {
 			ret = -ENOMEM;
@@ -823,7 +878,8 @@ static int mp4_mux_sync_internal(struct mp4_mux *mux, bool allow_boxes_after)
 			goto out;
 		}
 		if (track->referenceTrackHandleCount > 0) {
-			struct mp4_box *tref, *content;
+			struct mp4_box *tref;
+			const struct mp4_box *content;
 			tref = mp4_box_new_container(trak,
 						     MP4_TRACK_REFERENCE_BOX);
 			if (tref == NULL) {
@@ -832,24 +888,21 @@ static int mp4_mux_sync_internal(struct mp4_mux *mux, bool allow_boxes_after)
 			}
 			for (size_t i = 0; i < track->referenceTrackHandleCount;
 			     i++) {
-				struct mp4_mux_track *ref_track = NULL;
+				const struct mp4_mux_track *ref_track = NULL;
 				ref_track = mp4_mux_track_find_by_handle(
 					mux, track->referenceTrackHandle[i]);
 				if (ref_track == NULL) {
 					ret = -ENOENT;
 					goto out;
 				}
-				switch (track->type) {
-				case MP4_TRACK_TYPE_METADATA:
+				if (track->type == MP4_TRACK_TYPE_METADATA) {
 					content = mp4_box_new_cdsc(tref, track);
-					break;
-				default:
-					switch (ref_track->type) {
-					case MP4_TRACK_TYPE_CHAPTERS:
+				} else {
+					if (ref_track->type ==
+					    MP4_TRACK_TYPE_CHAPTERS) {
 						content = mp4_box_new_chap(
 							tref, track);
-						break;
-					default:
+					} else {
 						/* Ref is not handled for
 						 * non-metadata tracks */
 						ret = -EINVAL;
@@ -902,12 +955,10 @@ static int mp4_mux_sync_internal(struct mp4_mux *mux, bool allow_boxes_after)
 		}
 
 		/* Write META metadata */
-		if (has_meta_meta) {
-			if (mp4_box_new_meta(trak, &track->track_metadata) ==
-			    NULL) {
-				ret = -ENOMEM;
-				goto out;
-			}
+		if (has_meta_meta &&
+		    (mp4_box_new_meta(trak, &track->track_metadata) == NULL)) {
+			ret = -ENOMEM;
+			goto out;
 		}
 
 		/* Write UDTA metadata */
@@ -919,13 +970,11 @@ static int mp4_mux_sync_internal(struct mp4_mux *mux, bool allow_boxes_after)
 				goto out;
 			}
 			/* Write UDTA metadata */
-			if (has_meta_udta) {
-				if (mp4_box_new_meta_udta(
-					    udta, &track->track_metadata) ==
-				    NULL) {
-					ret = -ENOMEM;
-					goto out;
-				}
+			if (has_meta_udta &&
+			    (mp4_box_new_meta_udta(
+				     udta, &track->track_metadata) == NULL)) {
+				ret = -ENOMEM;
+				goto out;
 			}
 			/* Directly write UDTA_ROOT metadata */
 			list_walk_entry_forward(&track->metadatas, meta, node)
@@ -1025,11 +1074,10 @@ static int mp4_mux_sync_internal(struct mp4_mux *mux, bool allow_boxes_after)
 		}
 	}
 	/* Write META metadata */
-	if (has_meta_meta) {
-		if (mp4_box_new_meta(moov, &mux->file_metadata) == NULL) {
-			ret = -ENOMEM;
-			goto out;
-		}
+	if (has_meta_meta &&
+	    (mp4_box_new_meta(moov, &mux->file_metadata) == NULL)) {
+		ret = -ENOMEM;
+		goto out;
 	}
 	/* Write UDTA metadata */
 	if (has_meta_udta || has_meta_udta_root) {
@@ -1040,12 +1088,11 @@ static int mp4_mux_sync_internal(struct mp4_mux *mux, bool allow_boxes_after)
 			goto out;
 		}
 		/* Write UDTA metadata */
-		if (has_meta_udta) {
-			if (mp4_box_new_meta_udta(udta, &mux->file_metadata) ==
-			    NULL) {
-				ret = -ENOMEM;
-				goto out;
-			}
+		if (has_meta_udta &&
+		    (mp4_box_new_meta_udta(udta, &mux->file_metadata) ==
+		     NULL)) {
+			ret = -ENOMEM;
+			goto out;
 		}
 		/* Directly write UDTA_ROOT metadata */
 		list_walk_entry_forward(&mux->metadatas, meta, node)
@@ -1334,11 +1381,10 @@ error:
 }
 
 
-MP4_API int mp4_mux_add_ref_to_track(struct mp4_mux *mux,
+MP4_API int mp4_mux_add_ref_to_track(const struct mp4_mux *mux,
 				     unsigned int track_handle,
 				     unsigned int ref_track_handle)
 {
-	unsigned int i;
 	struct mp4_mux_track *track;
 
 	ULOG_ERRNO_RETURN_ERR_IF(mux == NULL, EINVAL);
@@ -1363,7 +1409,7 @@ MP4_API int mp4_mux_add_ref_to_track(struct mp4_mux *mux,
 	}
 
 	/* Check ref to add isn't already stored */
-	for (i = 0; i < track->referenceTrackHandleCount; i++) {
+	for (unsigned int i = 0; i < track->referenceTrackHandleCount; i++) {
 		if (track->referenceTrackHandle[i] == ref_track_handle) {
 			ULOGD("%s: reference to track handle %" PRIu32
 			      " exist within track handle %" PRIu32,
@@ -1385,10 +1431,10 @@ MP4_API int mp4_mux_add_ref_to_track(struct mp4_mux *mux,
 }
 
 
-MP4_API int
-mp4_mux_track_set_video_decoder_config(struct mp4_mux *mux,
-				       int track_handle,
-				       struct mp4_video_decoder_config *vdc)
+MP4_API int mp4_mux_track_set_video_decoder_config(
+	const struct mp4_mux *mux,
+	int track_handle,
+	const struct mp4_video_decoder_config *vdc)
 {
 	struct mp4_mux_track *track;
 	int ret = 0;
@@ -1428,7 +1474,7 @@ mp4_mux_track_set_video_decoder_config(struct mp4_mux *mux,
 }
 
 
-MP4_API int mp4_mux_track_set_audio_specific_config(struct mp4_mux *mux,
+MP4_API int mp4_mux_track_set_audio_specific_config(const struct mp4_mux *mux,
 						    int track_handle,
 						    const uint8_t *asc,
 						    size_t asc_size,
@@ -1464,7 +1510,7 @@ MP4_API int mp4_mux_track_set_audio_specific_config(struct mp4_mux *mux,
 }
 
 
-MP4_API int mp4_mux_track_set_metadata_mime_type(struct mp4_mux *mux,
+MP4_API int mp4_mux_track_set_metadata_mime_type(const struct mp4_mux *mux,
 						 int track_handle,
 						 const char *content_encoding,
 						 const char *mime_type)
@@ -1536,7 +1582,7 @@ static int mp4_mux_add_metadata_internal(struct mp4_mux *mux,
 	if (strncmp(key, "com.", 4) == 0) {
 		/* _META_ key, store in moov/meta */
 		storage = MP4_MUX_META_META;
-	} else if (strlen(key) == 4) {
+	} else if (mp4_validate_str_len(key, 5) == 4) {
 		/* _UDTA_ key, store in moov/udta/meta, except for location,
 		 * stored in moov/udta */
 		if (strcmp(key, MP4_UDTA_KEY_LOCATION) == 0)
@@ -1658,7 +1704,7 @@ MP4_API int mp4_mux_set_file_cover(struct mp4_mux *mux,
 	return 0;
 }
 
-MP4_API int mp4_mux_track_add_sample(struct mp4_mux *mux,
+MP4_API int mp4_mux_track_add_sample(const struct mp4_mux *mux,
 				     int track_handle,
 				     const struct mp4_mux_sample *sample)
 {
@@ -1681,13 +1727,14 @@ MP4_API int mp4_mux_track_add_sample(struct mp4_mux *mux,
 
 
 MP4_API int mp4_mux_track_add_scattered_sample(
-	struct mp4_mux *mux,
+	const struct mp4_mux *mux,
 	int track_handle,
 	const struct mp4_mux_scattered_sample *sample)
 {
 	int ret = 0;
 	struct mp4_mux_track *track;
-	struct iovec *iov;
+	struct iovec stack_iov[MP4_DEFAULT_BUFFER_COUNT];
+	struct iovec *iov = stack_iov;
 	ssize_t written;
 	ssize_t total_size = 0;
 	off_t offset = 0;
@@ -1699,11 +1746,13 @@ MP4_API int mp4_mux_track_add_scattered_sample(
 	ULOG_ERRNO_RETURN_ERR_IF(sample->buffers == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(sample->len == NULL, EINVAL);
 
-	iov = calloc(sample->nbuffers, sizeof(*iov));
-	if (!iov) {
-		ret = -ENOMEM;
-		ULOG_ERRNO("calloc", -ret);
-		goto out;
+	if (sample->nbuffers > MP4_DEFAULT_BUFFER_COUNT) {
+		iov = calloc(sample->nbuffers, sizeof(*iov));
+		if (!iov) {
+			ret = -ENOMEM;
+			ULOG_ERRNO("calloc", -ret);
+			goto out;
+		}
 	}
 
 	track = mp4_mux_track_find_by_handle(mux, track_handle);
@@ -1797,7 +1846,7 @@ MP4_API int mp4_mux_track_add_scattered_sample(
 	track->last_dts = sample->dts;
 
 out:
-	if (iov)
+	if (iov != NULL && iov != stack_iov)
 		free(iov);
 	return ret;
 }
@@ -1806,7 +1855,6 @@ out:
 MP4_API void mp4_mux_dump(struct mp4_mux *mux)
 {
 	struct mp4_mux_track *track;
-	unsigned int i;
 
 	ULOG_ERRNO_RETURN_IF(mux == NULL, EINVAL);
 
@@ -1826,8 +1874,9 @@ MP4_API void mp4_mux_dump(struct mp4_mux *mux)
 		      track->handle,
 		      track->id,
 		      track->type);
-		for (i = 0; i < track->referenceTrackHandleCount; i++) {
-			struct mp4_mux_track *ref_track =
+		for (uint32_t i = 0; i < track->referenceTrackHandleCount;
+		     i++) {
+			const struct mp4_mux_track *ref_track =
 				mp4_mux_track_find_by_handle(
 					mux, track->referenceTrackHandle[i]);
 			if (ref_track == NULL) {

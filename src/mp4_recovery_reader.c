@@ -241,7 +241,6 @@ out:
 
 static int
 mp4_mux_recovery_read_audio_specific_config(int file_fd,
-					    struct mp4_mux *mux,
 					    struct mp4_mux_track *track)
 {
 	int ret = 0;
@@ -265,9 +264,7 @@ out:
 }
 
 
-static int mp4_mux_recovery_read_vdec(int file_fd,
-				      struct mp4_mux *mux,
-				      struct mp4_mux_track *track)
+static int mp4_mux_recovery_read_vdec(int file_fd, struct mp4_mux_track *track)
 {
 	int ret = 0;
 	ssize_t err = 0;
@@ -305,9 +302,10 @@ out:
 }
 
 
-static int mp4_mux_recovery_read_metadata_stsd(int file_fd,
-					       struct mp4_mux *mux,
-					       struct mp4_mux_track *track)
+static int
+mp4_mux_recovery_read_metadata_stsd(int file_fd,
+				    const struct mp4_mux *mux,
+				    const struct mp4_mux_track *track)
 {
 	int ret = 0;
 	ssize_t err = 0;
@@ -350,15 +348,15 @@ static int mp4_mux_recovery_read_stsd(int file_fd,
 
 	switch (track->type) {
 	case MP4_TRACK_TYPE_VIDEO:
-		ret = mp4_mux_recovery_read_vdec(file_fd, mux, track);
+		ret = mp4_mux_recovery_read_vdec(file_fd, track);
 		if (ret < 0) {
 			ULOG_ERRNO("mp4_mux_recovery_read_vdec", -ret);
 			goto out;
 		}
 		break;
 	case MP4_TRACK_TYPE_AUDIO:
-		ret = mp4_mux_recovery_read_audio_specific_config(
-			file_fd, mux, track);
+		ret = mp4_mux_recovery_read_audio_specific_config(file_fd,
+								  track);
 		if (ret < 0) {
 			ULOG_ERRNO(
 				"mp4_mux_recovery_read_audio_specific_config",
@@ -390,13 +388,11 @@ static int mp4_mux_recovery_read_meta(int file_fd,
 	int ret = 0;
 	ssize_t err = 0;
 	uint32_t val32;
-	enum mp4_mux_meta_storage storage;
 	char *key = NULL;
 	char *value = NULL;
 
 	/* storage */
 	RECOVERY_READ_VAL(val32);
-	storage = val32;
 
 	/* key */
 	RECOVERY_READ_STR(key, val32);
@@ -499,6 +495,8 @@ static int mp4_mux_recovery_read_thumb(int file_fd,
 				       struct mp4_mux *mux,
 				       const struct recovery_box_info *item)
 {
+	UNUSED(item);
+
 	int ret = 0;
 	ssize_t err = 0;
 	uint32_t val32;
@@ -623,29 +621,37 @@ out:
 
 
 static const struct {
+	const char *name;
 	uint32_t type;
 	int (*func)(int file_fd,
 		    struct mp4_mux *mux,
 		    const struct recovery_box_info *item);
 	bool fatal;
 } type_map[] = {
-	{MP4_TRACK_BOX, &mp4_mux_recovery_read_track, true},
-	{MP4_DECODING_TIME_TO_SAMPLE_BOX, &mp4_mux_recovery_read_stts, false},
-	{MP4_SYNC_SAMPLE_BOX, &mp4_mux_recovery_read_stss, false},
-	{MP4_SAMPLE_TO_CHUNK_BOX, &mp4_mux_recovery_read_stsc, false},
-	{MP4_SAMPLE_SIZE_BOX, &mp4_mux_recovery_read_stsz, false},
-	{MP4_CHUNK_OFFSET_BOX, &mp4_mux_recovery_read_stco, false},
-	{MP4_CHUNK_OFFSET_64_BOX, &mp4_mux_recovery_read_stco, false},
-	{MP4_SAMPLE_DESCRIPTION_BOX, &mp4_mux_recovery_read_stsd, true},
-	{MP4_META_BOX, &mp4_mux_recovery_read_meta, false},
-	{MP4_METADATA_TAG_TYPE_COVER, &mp4_mux_recovery_read_thumb, false},
+	{"trak", MP4_TRACK_BOX, &mp4_mux_recovery_read_track, true},
+	{"stts",
+	 MP4_DECODING_TIME_TO_SAMPLE_BOX,
+	 &mp4_mux_recovery_read_stts,
+	 false},
+	{"stss", MP4_SYNC_SAMPLE_BOX, &mp4_mux_recovery_read_stss, false},
+	{"stsc", MP4_SAMPLE_TO_CHUNK_BOX, &mp4_mux_recovery_read_stsc, false},
+	{"stsz", MP4_SAMPLE_SIZE_BOX, &mp4_mux_recovery_read_stsz, false},
+	{"stco", MP4_CHUNK_OFFSET_BOX, &mp4_mux_recovery_read_stco, false},
+	{"co64", MP4_CHUNK_OFFSET_64_BOX, &mp4_mux_recovery_read_stco, false},
+	{"stsd", MP4_SAMPLE_DESCRIPTION_BOX, &mp4_mux_recovery_read_stsd, true},
+	{"meta", MP4_META_BOX, &mp4_mux_recovery_read_meta, false},
+	{"covr",
+	 MP4_METADATA_TAG_TYPE_COVER,
+	 &mp4_mux_recovery_read_thumb,
+	 false},
 };
 
 
 static int mp4_mux_recovery_read_box_info(int file_fd,
 					  struct recovery_box_info *item,
 					  struct mp4_mux *mux,
-					  bool *minor_fail)
+					  bool *minor_fail,
+					  bool dump)
 {
 	int ret = 0;
 	ssize_t err = 0;
@@ -661,6 +667,12 @@ static int mp4_mux_recovery_read_box_info(int file_fd,
 			ULOGE("item count is too big");
 			return -EPROTO;
 		}
+		if (dump) {
+			ULOGI("%s, for track %u (x%u)",
+			      type_map[i].name,
+			      item->track_handle,
+			      item->number);
+		}
 		ret = type_map[i].func(file_fd, mux, item);
 		*minor_fail = !type_map[i].fatal && (ret < 0);
 		return ret;
@@ -674,14 +686,148 @@ out:
 }
 
 
-int mp4_mux_fill_from_file(const char *file_path,
+static int mp4_recovery_dump_recovery_tables_file_header(
+	const struct mp4_recovery_tables_header *header)
+{
+	if (header == NULL)
+		return -EINVAL;
+
+	ULOGI("magic: %" PRIu32 " (%s)",
+	      header->magic,
+	      (header->magic == MP4_RECOVERY_TABLES_HEADER_MAGIC) ? "OK"
+								  : "KO");
+	ULOGI("tables_size: %" PRIu64, header->tables_size);
+	ULOGI("mux_tables_size: %" PRIu64 "MB", header->mux_tables_size);
+	ULOGI("version: %" PRIu32, header->version);
+	ULOGI("path: '%s' (%" PRIu32 ")",
+	      header->data_path,
+	      header->data_path_length);
+	ULOGI("uuid: '%s' (%" PRIu32 ")", header->uuid, header->uuid_length);
+
+	return 0;
+}
+
+
+int mp4_recovery_tables_header_read_fd(
+	int tables_file_fd,
+	struct mp4_recovery_tables_header *header)
+{
+	int ret = 0;
+	int err = 0;
+	int file_fd = tables_file_fd;
+
+	ULOG_ERRNO_RETURN_ERR_IF(file_fd < 0, EINVAL);
+	ULOG_ERRNO_RETURN_ERR_IF(header == NULL, EINVAL);
+
+	memset(header, 0, sizeof(*header));
+
+	/* seek to header position */
+	if (lseek(file_fd, 0, SEEK_SET) == -1) {
+		ret = -errno;
+		goto out;
+	}
+
+	RECOVERY_READ_VAL(header->magic);
+	if (header->magic != MP4_RECOVERY_TABLES_HEADER_MAGIC) {
+		ret = -EPROTO;
+		ULOG_ERRNO("bad magic", -ret);
+		return ret;
+	}
+	RECOVERY_READ_VAL(header->version);
+	RECOVERY_READ_VAL(header->tables_size);
+	RECOVERY_READ_VAL(header->mux_tables_size);
+	if (header->version < MP4_RECOVERY_FORMAT_VERSION_MIN_SUPPORTED ||
+	    header->version > MP4_RECOVERY_FORMAT_VERSION_CURRENT) {
+		ULOGE("unsupported recovery version (%d), current recovery "
+		      "version is %d",
+		      header->version,
+		      MP4_RECOVERY_FORMAT_VERSION_MIN_SUPPORTED);
+		ret = -ENOSYS;
+		goto out;
+	} else if (header->version != MP4_RECOVERY_FORMAT_VERSION_CURRENT) {
+		ULOGW("deprecated recovery version (%d), current recovery "
+		      "version is %d",
+		      header->version,
+		      MP4_RECOVERY_FORMAT_VERSION_CURRENT);
+	}
+	RECOVERY_READ_STR(header->data_path, header->data_path_length);
+	if (header->data_path_length == 0 || header->data_path[0] == '\0') {
+		ret = -EPROTO;
+		ULOG_ERRNO("invalid data path", -ret);
+		goto out;
+	}
+	RECOVERY_READ_STR(header->uuid, header->uuid_length);
+
+out:
+	return ret;
+}
+
+
+int mp4_recovery_tables_header_read_file(
+	const char *tables_file,
+	struct mp4_recovery_tables_header *header)
+{
+	int ret = 0;
+	int file_fd = -1;
+
+	ULOG_ERRNO_RETURN_ERR_IF(tables_file == NULL, EINVAL);
+	ULOG_ERRNO_RETURN_ERR_IF(header == NULL, EINVAL);
+
+	file_fd = open(tables_file, O_RDONLY);
+	if (file_fd == -1) {
+		ret = -errno;
+		ULOG_ERRNO(
+			"failed to open tables_file (%s)", errno, tables_file);
+		goto out;
+	}
+
+	ret = mp4_recovery_tables_header_read_fd(file_fd, header);
+	if (ret < 0) {
+		ULOG_ERRNO("mp4_recovery_tables_header_read_fd", -ret);
+		goto out;
+	}
+
+out:
+	if (file_fd != -1)
+		close(file_fd);
+	return ret;
+}
+
+
+int mp4_recovery_tables_header_clear(struct mp4_recovery_tables_header *header)
+{
+	ULOG_ERRNO_RETURN_ERR_IF(header == NULL, EINVAL);
+
+	free(header->data_path);
+	header->data_path = NULL;
+	free(header->uuid);
+	header->uuid = NULL;
+
+	return 0;
+}
+
+
+static inline int seek_to_start_of_data(int tables_fd)
+{
+	struct mp4_recovery_tables_header header = {};
+
+	int ret = mp4_recovery_tables_header_read_fd(tables_fd, &header);
+
+	(void)mp4_recovery_tables_header_clear(&header);
+
+	return ret;
+}
+
+
+int mp4_mux_fill_from_file(const struct mp4_recovery_tables_header *header,
+			   const char *tables_file,
 			   struct mp4_mux *mux,
 			   char **error_msg)
 {
 	int ret = 0;
-	int file_fd = open(file_path, O_RDONLY);
+	int file_fd = -1;
 	ssize_t end_off;
-	ssize_t curr_off;
+	ssize_t curr_off = 0;
 	struct recovery_box_info item;
 	struct mp4_mux_track *track;
 	uint32_t resized_samples = 0;
@@ -691,10 +837,11 @@ int mp4_mux_fill_from_file(const char *file_path,
 	bool minor_fail = false;
 	uint32_t min_count = 0;
 
+	file_fd = open(tables_file, O_RDONLY);
 	if (file_fd == -1) {
 		ret = -errno;
 		*error_msg = strdup("failed to open tables file");
-		ULOG_ERRNO("%s (%s)", errno, *error_msg, file_path);
+		ULOG_ERRNO("%s (%s)", errno, *error_msg, tables_file);
 		goto out;
 	}
 
@@ -706,15 +853,15 @@ int mp4_mux_fill_from_file(const char *file_path,
 		goto out;
 	}
 
-	end_off = lseek(file_fd, 0, SEEK_END);
-	if (end_off <= 0) {
-		ret = -errno;
-		ULOG_ERRNO("lseek", -ret);
-		*error_msg = strdup("Failed to parse tables file");
+	end_off = header->tables_size;
+
+	ret = seek_to_start_of_data(file_fd);
+	if (ret < 0) {
+		ULOG_ERRNO("seek_to_start_of_data", -ret);
 		goto out;
 	}
 
-	curr_off = lseek(file_fd, 0, SEEK_SET);
+	curr_off = lseek(file_fd, 0, SEEK_CUR);
 	if (curr_off < 0) {
 		ret = -errno;
 		ULOG_ERRNO("lseek", -ret);
@@ -724,7 +871,7 @@ int mp4_mux_fill_from_file(const char *file_path,
 	while ((curr_off + 12) < end_off) {
 		minor_fail = false;
 		ret = mp4_mux_recovery_read_box_info(
-			file_fd, &item, mux, &minor_fail);
+			file_fd, &item, mux, &minor_fail, false);
 		if (minor_fail) {
 			/* crashed occurred during sync but mp4 is still
 			 * recoverable */
@@ -736,7 +883,7 @@ int mp4_mux_fill_from_file(const char *file_path,
 			ULOG_ERRNO("mp4_mux_recovery_read_box_info: %s (%s)",
 				   -ret,
 				   *error_msg,
-				   file_path);
+				   tables_file);
 			goto out;
 		}
 		curr_off = lseek(file_fd, 0, SEEK_CUR);
@@ -776,5 +923,110 @@ int mp4_mux_fill_from_file(const char *file_path,
 out:
 	if (file_fd != -1)
 		close(file_fd);
+	return ret;
+}
+
+
+int mp4_recovery_dump_tables_file(const char *tables_file)
+{
+	int ret = 0;
+	int file_fd = -1;
+	ssize_t end_off;
+	ssize_t curr_off = 0;
+	struct recovery_box_info item;
+	bool minor_fail = false;
+	struct mp4_recovery_tables_header header = {};
+	struct mp4_mux *mux;
+	struct mp4_mux_config config = {
+		/* Temporary file needed to parse recovery file, will be deleted
+		 * later */
+		.filename = "./tmp_file.mp4",
+		.filemode = 0644,
+		.timescale = 90000,
+		.creation_time = 1000,
+		.modification_time = 1000,
+		.tables_size_mbytes = MP4_MUX_DEFAULT_TABLE_SIZE_MB,
+		.recovery.tables_file = NULL,
+		.recovery.check_storage_uuid = 0,
+	};
+
+	ret = mp4_mux_open(&config, &mux);
+	if (ret < 0) {
+		ULOG_ERRNO("mp4_mux_open", -ret);
+		goto out;
+	}
+
+	file_fd = open(tables_file, O_RDONLY);
+	if (file_fd == -1) {
+		ret = -errno;
+		ULOG_ERRNO("%s (%s)",
+			   errno,
+			   "failed to open tables file",
+			   tables_file);
+		goto out;
+	}
+
+	ret = mp4_recovery_tables_header_read_fd(file_fd, &header);
+	if (ret < 0) {
+		ULOG_ERRNO("mp4_recovery_tables_header_read_fd", -ret);
+		goto out;
+	}
+
+	ULOGI("---");
+	ret = mp4_recovery_dump_recovery_tables_file_header(&header);
+	if (ret < 0) {
+		ULOG_ERRNO("mp4_recovery_dump_recovery_tables_file_header",
+			   -ret);
+		goto out;
+	}
+	ULOGI("---");
+
+	end_off = header.tables_size;
+
+	ret = seek_to_start_of_data(file_fd);
+	if (ret < 0) {
+		ULOG_ERRNO("seek_to_start_of_data", -ret);
+		goto out;
+	}
+
+	curr_off = lseek(file_fd, 0, SEEK_CUR);
+	if (curr_off < 0) {
+		ret = -errno;
+		ULOG_ERRNO("lseek", -ret);
+		goto out;
+	}
+
+	while ((curr_off + 12) < end_off) {
+		minor_fail = false;
+		ret = mp4_mux_recovery_read_box_info(
+			file_fd, &item, mux, &minor_fail, true);
+		if (minor_fail) {
+			/* crashed occurred during sync but mp4 is still
+			 * recoverable */
+			ULOGW_ERRNO(-ret, "mp4_recovery_dump_box_info");
+			break;
+		} else if (ret < 0) {
+			/* mp4 will not be recoverable, quit with error */
+			ULOG_ERRNO("mp4_recovery_dump_box_info: %s (%s)",
+				   -ret,
+				   "Failed to parse tables file",
+				   tables_file);
+			goto out;
+		}
+		curr_off = lseek(file_fd, 0, SEEK_CUR);
+		if (curr_off < 0) {
+			ret = -errno;
+			ULOG_ERRNO("lseek", -ret);
+			goto out;
+		}
+	}
+
+out:
+	if (file_fd != -1)
+		close(file_fd);
+	if (mux) {
+		(void)mp4_mux_close(mux);
+		remove(config.filename);
+	}
 	return ret;
 }

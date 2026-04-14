@@ -36,22 +36,45 @@
 #include <string.h>
 #include <time.h>
 
-#define ULOG_TAG mp4_demux
-#include <ulog.h>
-ULOG_DECLARE_TAG(mp4_demux);
-
 #include <futils/futils.h>
 #include <libmp4.h>
 
 
+#define ULOG_TAG mp4_demux
+#include <ulog.h>
+ULOG_DECLARE_TAG(mp4_demux);
+
+
 #define DATE_SIZE 26
+#ifndef PATH_MAX
+#	ifdef _MAX_PATH
+#		define PATH_MAX _MAX_PATH
+#	else
+#		define PATH_MAX 4096
+#	endif
+#endif
 
 
 static bool log_frames;
 static const char *cover_file;
 
 
-static void print_info(struct mp4_demux *demux)
+static inline size_t mp4_validate_str_len(const char *s, size_t max_len)
+{
+	size_t len;
+
+	if (s == NULL)
+		return 0;
+
+	len = strnlen(s, max_len);
+	if (len >= max_len)
+		return 0;
+
+	return len;
+}
+
+
+static void print_info(const struct mp4_demux *demux)
 {
 	struct mp4_media_info info;
 	int ret;
@@ -90,10 +113,11 @@ static void print_info(struct mp4_demux *demux)
 }
 
 
-static void print_tracks(struct mp4_demux *demux)
+static void print_tracks(const struct mp4_demux *demux)
 {
 	struct mp4_track_info tk;
-	int i, count, ret;
+	int count;
+	int ret;
 	uint32_t duration_usec;
 
 	count = mp4_demux_get_track_count(demux);
@@ -102,7 +126,7 @@ static void print_tracks(struct mp4_demux *demux)
 		return;
 	}
 
-	for (i = 0; i < count; i++) {
+	for (int i = 0; i < count; i++) {
 		ret = mp4_demux_get_track_info(demux, i, &tk);
 		if (ret < 0) {
 			ULOG_ERRNO("mp4_demux_get_track_info", -ret);
@@ -181,8 +205,7 @@ static void print_tracks(struct mp4_demux *demux)
 			demux, tk.id, &meta_count, &keys, &values);
 		if ((ret == 0) && (meta_count > 0)) {
 			printf("  static metadata:\n");
-			unsigned int j;
-			for (j = 0; j < meta_count; j++) {
+			for (unsigned int j = 0; j < meta_count; j++) {
 				if ((keys[j]) && (values[j])) {
 					printf("    %s: %s\n",
 					       keys[j],
@@ -209,8 +232,7 @@ static void print_metadata(struct mp4_demux *demux)
 
 	if (count > 0) {
 		printf("Metadata\n");
-		unsigned int i;
-		for (i = 0; i < count; i++) {
+		for (unsigned int i = 0; i < count; i++) {
 			if ((keys[i]) && (values[i]))
 				printf("  %s: %s\n", keys[i], values[i]);
 		}
@@ -218,7 +240,8 @@ static void print_metadata(struct mp4_demux *demux)
 	}
 
 	uint8_t *cover_buffer = NULL;
-	unsigned int cover_buffer_size = 0, cover_size = 0;
+	unsigned int cover_buffer_size = 0;
+	unsigned int cover_size = 0;
 	enum mp4_metadata_cover_type type;
 	ret = mp4_demux_get_metadata_cover(
 		demux, cover_buffer, cover_buffer_size, &cover_size, &type);
@@ -241,7 +264,7 @@ static void print_metadata(struct mp4_demux *demux)
 		} else {
 			printf("Cover present (%s)\n\n",
 			       mp4_metadata_cover_type_str(type));
-			if (cover_file && strlen(cover_file)) {
+			if (mp4_validate_str_len(cover_file, PATH_MAX) > 0) {
 				FILE *f = fopen(cover_file, "wb");
 				if (f) {
 					fwrite(cover_buffer, cover_size, 1, f);
@@ -258,7 +281,7 @@ static void print_metadata(struct mp4_demux *demux)
 static void print_chapters(struct mp4_demux *demux)
 {
 	int ret;
-	unsigned int chapters_count = 0, i;
+	unsigned int chapters_count = 0;
 	uint64_t *chapters_time = NULL;
 	char **chapters_name = NULL;
 
@@ -273,7 +296,7 @@ static void print_chapters(struct mp4_demux *demux)
 		return;
 
 	printf("Chapters\n");
-	for (i = 0; i < chapters_count; i++) {
+	for (unsigned int i = 0; i < chapters_count; i++) {
 		unsigned int hrs = (unsigned int)((chapters_time[i] + 500000) /
 						  1000000 / 60 / 60);
 		unsigned int min = (unsigned int)((chapters_time[i] + 500000) /
@@ -293,11 +316,14 @@ static void print_chapters(struct mp4_demux *demux)
 }
 
 
-static void print_frames(struct mp4_demux *demux)
+static void print_frames(const struct mp4_demux *demux)
 {
 	struct mp4_track_info tk;
 	struct mp4_track_sample sample;
-	int i, count, ret, found = 0;
+	int i;
+	int count;
+	int ret;
+	int found = 0;
 	unsigned int id;
 
 	count = mp4_demux_get_track_count(demux);
@@ -401,11 +427,15 @@ static const struct option long_options[] = {
 
 int main(int argc, char **argv)
 {
-	int ret = 0, err = 0, status = EXIT_SUCCESS;
-	int idx, c;
+	int ret = 0;
+	int err = 0;
+	int status = EXIT_SUCCESS;
+	int idx;
+	int c;
 	struct mp4_demux *demux;
 	struct timespec ts = {0, 0};
-	uint64_t start_time = 0, end_time = 0;
+	uint64_t start_time = 0;
+	uint64_t end_time = 0;
 	const char *input_file = NULL;
 	const char *json_file = NULL;
 	bool pretty = false;

@@ -61,6 +61,8 @@
 /* Note: MAX_ALLOC_SIZE must be large enough to hold thumbnail */
 #define MAX_ALLOC_SIZE (10 * 1000 * 1000)
 
+#define UNUSED(x) (void)(x)
+
 
 /* clang-format off */
 #define MP4_ISOM                            0x69736f6d /* "isom" */
@@ -164,6 +166,53 @@
 #define TRACK_FLAG_IN_MOVIE (1 << 1)
 #define TRACK_FLAG_IN_PREVIEW (1 << 2)
 
+/* Buffer count is usually 6 (9 for IDR) */
+#define MP4_DEFAULT_BUFFER_COUNT 16
+
+#ifndef NAME_MAX
+#	ifdef _MAX_FNAME
+#		define NAME_MAX _MAX_FNAME
+#	elif defined(FILENAME_MAX)
+#		define NAME_MAX FILENAME_MAX
+#	else
+#		define NAME_MAX 255
+#	endif
+#endif
+#ifndef PATH_MAX
+#	ifdef _MAX_PATH
+#		define PATH_MAX _MAX_PATH
+#	else
+#		define PATH_MAX 4096
+#	endif
+#endif
+#ifndef METADATA_VALUE_MAX
+#	define METADATA_VALUE_MAX UINT16_MAX
+#endif
+
+
+/**
+ * Returns the length of a null-terminated string with an upper bound.
+ * @param str: Input string (must be null-terminated).
+ * @param max_len: Maximum allowed length (excluding null terminator).
+ * @return The string length if:
+    - str is not NULL
+    - a null terminator is found before max_len
+    Otherwise, returns 0.
+ */
+static inline size_t mp4_validate_str_len(const char *str, size_t max_len)
+{
+	size_t len;
+
+	if (str == NULL)
+		return 0;
+
+	len = strnlen(str, max_len);
+	if (len >= max_len)
+		return 0;
+
+	return len;
+}
+
 
 enum mp4_h265_nalu_type {
 	MP4_H265_NALU_TYPE_UNKNOWN = 0, /* Unknown type */
@@ -204,7 +253,7 @@ struct mp4_box {
 
 	struct {
 		off_t (*func)(struct mp4_mux *mux,
-			      struct mp4_box *box,
+			      const struct mp4_box *box,
 			      size_t maxBytes);
 		void *args;
 		int need_free;
@@ -426,8 +475,6 @@ struct mp4_mux {
 	int fd;
 	char *filename;
 	struct {
-		char *link_file;
-		int fd_link;
 		char *tables_file;
 		char *tmp_tables_file;
 		int fd_tables;
@@ -435,6 +482,7 @@ struct mp4_mux {
 		bool enabled;
 		uint32_t meta_write_count;
 		bool thumb_written;
+		bool check_storage_uuid;
 	} recovery;
 	uint64_t duration;
 	uint64_t creation_time;
@@ -455,6 +503,24 @@ struct mp4_mux {
 		off_t buf_size;
 	} tables;
 };
+
+
+/** Recovery format version history:
+ *  Version 1: moov atom entirely written in mrf file (Not supported anymore).
+ *  Version 2: supports incremental tables (Not supported anymore).
+ *  Version 3: supports tables file pre-allocation (Current, with header).
+ */
+#define MP4_RECOVERY_FORMAT_V1 1
+#define MP4_RECOVERY_FORMAT_V2 2
+#define MP4_RECOVERY_FORMAT_V3 3
+
+/** Current version used for new file creation */
+static const uint32_t MP4_RECOVERY_FORMAT_VERSION_CURRENT =
+	MP4_RECOVERY_FORMAT_V3;
+
+/** Minimum version that can be parsed by the current implementation */
+static const uint32_t MP4_RECOVERY_FORMAT_VERSION_MIN_SUPPORTED =
+	MP4_RECOVERY_FORMAT_V3;
 
 
 #define OFF_T_TO_ERRNO(_off, default_errno)                                    \
@@ -723,7 +789,7 @@ struct mp4_box *mp4_box_new_udta_entry(struct mp4_box *parent,
 void mp4_box_destroy(struct mp4_box *box);
 
 
-void mp4_box_log(struct mp4_box *box, int level);
+void mp4_box_log(const struct mp4_box *box, int level);
 
 
 off_t mp4_box_children_read(struct mp4_file *mp4,
@@ -738,15 +804,15 @@ off_t mp4_box_ftyp_write(struct mp4_mux *mux);
 off_t mp4_box_free_write(struct mp4_mux *mux, size_t len);
 
 
-off_t mp4_box_mdat_write(struct mp4_mux *mux, uint64_t size);
+off_t mp4_box_mdat_write(const struct mp4_mux *mux, uint64_t size);
 
 
-int mp4_track_is_sync_sample(struct mp4_track *track,
+int mp4_track_is_sync_sample(const struct mp4_track *track,
 			     unsigned int sampleIdx,
 			     int *prevSyncSampleIdx);
 
 
-int mp4_track_find_sample_by_time(struct mp4_track *track,
+int mp4_track_find_sample_by_time(const struct mp4_track *track,
 				  uint64_t time,
 				  enum mp4_time_cmp cmp,
 				  int sync,
@@ -759,18 +825,19 @@ struct mp4_track *mp4_track_add(struct mp4_file *mp4);
 int mp4_track_remove(struct mp4_file *mp4, struct mp4_track *track);
 
 
-struct mp4_track *mp4_track_find(struct mp4_file *mp4, struct mp4_track *track);
+struct mp4_track *mp4_track_find(const struct mp4_file *mp4,
+				 const struct mp4_track *track);
 
 
-struct mp4_track *mp4_track_find_by_idx(struct mp4_file *mp4,
+struct mp4_track *mp4_track_find_by_idx(const struct mp4_file *mp4,
 					unsigned int track_idx);
 
 
-struct mp4_track *mp4_track_find_by_id(struct mp4_file *mp4,
+struct mp4_track *mp4_track_find_by_id(const struct mp4_file *mp4,
 				       unsigned int track_id);
 
 
-void mp4_tracks_destroy(struct mp4_file *mp4);
+void mp4_tracks_destroy(const struct mp4_file *mp4);
 
 
 int mp4_tracks_build(struct mp4_file *mp4);
@@ -779,21 +846,15 @@ int mp4_tracks_build(struct mp4_file *mp4);
 void mp4_video_decoder_config_destroy(struct mp4_video_decoder_config *vdc);
 
 
-int mp4_prepare_link_file(int fd_link_file,
-			  const char *tables_file,
-			  const char *filepath,
-			  off_t tables_size_bytes,
-			  bool check_storage_uuid);
-
-
-struct mp4_mux_track *mp4_mux_track_find_by_handle(struct mp4_mux *mux,
+struct mp4_mux_track *mp4_mux_track_find_by_handle(const struct mp4_mux *mux,
 						   uint32_t track_handle);
 
 
 int mp4_mux_sort_tracks(struct mp4_mux *mux);
 
 
-int mp4_mux_track_compute_tts(struct mp4_mux *mux, struct mp4_mux_track *track);
+int mp4_mux_track_compute_tts(const struct mp4_mux *mux,
+			      struct mp4_mux_track *track);
 
 
 int mp4_mux_grow_samples(struct mp4_mux_track *track, int new_samples);
@@ -814,9 +875,21 @@ int mp4_mux_grow_sync(struct mp4_mux_track *track, int new_sync);
 int mp4_mux_incremental_sync(struct mp4_mux *mux);
 
 
-int mp4_mux_fill_from_file(const char *file_path,
+int mp4_mux_fill_from_file(const struct mp4_recovery_tables_header *header,
+			   const char *tables_file,
 			   struct mp4_mux *mux,
 			   char **error_msg);
+
+
+int mp4_mux_recovery_tables_header_fill(
+	const struct mp4_mux *mux,
+	struct mp4_recovery_tables_header *header);
+
+
+int mp4_recovery_tables_header_write(
+	int tables_file_fd,
+	const struct mp4_recovery_tables_header *header,
+	bool first_write);
 
 
 #endif /* !_MP4_H_ */

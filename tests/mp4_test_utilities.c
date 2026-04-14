@@ -127,7 +127,7 @@ static void test_mp4_utilities_mp4_to_json(void)
 static void test_mp4_utilities_generate_chapter_sample(void)
 {
 	int res = 0;
-	char *chapter_str = "chapter_name";
+	const char *chapter_str = "chapter_name";
 	uint8_t *buffer;
 	unsigned int buffer_size;
 

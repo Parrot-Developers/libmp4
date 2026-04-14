@@ -213,6 +213,24 @@ static struct {
 			.test_all_samples = false,
 		},
 	},
+	{
+		"Tests/anafi3/classic/stream_sharing/first_frame_not_idr.MP4",
+		"",
+		{
+			.media_info.duration = 274040433,
+			.media_info.creation_time = 1762792640,
+			.media_info.modification_time = 1762792640,
+			.media_info.track_count = 2,
+			.chapters_count = 0,
+			.chapter_names = NULL,
+			.metas = NULL,
+			.meta_count = 27,
+			.meta_to_find_count = 0,
+			.cover_size = 0,
+			.cover_type = MP4_METADATA_COVER_TYPE_UNKNOWN,
+			.test_all_samples = false,
+		},
+	},
 };
 
 
@@ -277,7 +295,7 @@ static void test_mp4_demux_get_track_next_sample_time_after(void)
 			&ts_sample);
 		CU_ASSERT_EQUAL(res, -ENOENT);
 
-		for (size_t j = 0;
+		for (unsigned int j = 0;
 		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {
@@ -338,7 +356,7 @@ static void test_mp4_demux_get_track_next_sample_time_before(void)
 			&ts_sample);
 		CU_ASSERT_EQUAL(res, -ENOENT);
 
-		for (size_t j = 0;
+		for (unsigned int j = 0;
 		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {
@@ -395,7 +413,7 @@ static void test_mp4_demux_get_sample_time(void)
 	     i++) {
 		GET_PATH(path, i, assets_tests_mp4_demux, relative_path);
 
-		for (size_t j = 0;
+		for (unsigned int j = 0;
 		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {
@@ -446,8 +464,8 @@ static void test_mp4_demux_get_sample_time(void)
 }
 
 
-static void skip_silent_frames(struct mp4_demux *demux,
-			       struct mp4_track_info *track_info,
+static void skip_silent_frames(const struct mp4_demux *demux,
+			       const struct mp4_track_info *track_info,
 			       unsigned int *silent_count,
 			       uint64_t *sample_time)
 {
@@ -484,9 +502,12 @@ static void test_mp4_demux_seek(void)
 	char path[200];
 	struct mp4_demux *demux;
 	struct mp4_track_info track_info;
-	uint64_t ts_ref, ts = 0;
-	uint64_t ts_before = 0, ts_after = 0;
-	uint64_t ts_before_sync = 0, ts_after_sync = 0;
+	uint64_t ts_ref;
+	uint64_t ts = 0;
+	uint64_t ts_before = 0;
+	uint64_t ts_after = 0;
+	uint64_t ts_before_sync = 0;
+	uint64_t ts_after_sync = 0;
 
 	struct {
 		enum mp4_seek_method method;
@@ -523,7 +544,7 @@ static void test_mp4_demux_seek(void)
 	     i++) {
 		GET_PATH(path, i, assets_tests_mp4_demux, relative_path);
 
-		for (size_t j = 0;
+		for (unsigned int j = 0;
 		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {
@@ -536,6 +557,9 @@ static void test_mp4_demux_seek(void)
 			/* Test all seek methods */
 			for (size_t i = 0; i < SIZEOF_ARRAY(seek_methods);
 			     i++) {
+				res = mp4_demux_seek(
+					demux, 0, seek_methods[i].method);
+				CU_ASSERT_EQUAL(res, 0);
 
 				/* Test at several timestamps in track */
 				for (size_t j = 2; j < 10; j += 2) {
@@ -707,7 +731,7 @@ static void test_mp4_demux_seek_to_track_prev_sample(void)
 	     i++) {
 		GET_PATH(path, i, assets_tests_mp4_demux, relative_path);
 
-		for (size_t j = 0;
+		for (unsigned int j = 0;
 		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {
@@ -805,7 +829,7 @@ static void test_mp4_demux_seek_to_track_next_sample(void)
 	     i++) {
 		GET_PATH(path, i, assets_tests_mp4_demux, relative_path);
 
-		for (size_t j = 0;
+		for (unsigned int j = 0;
 		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {
@@ -908,7 +932,7 @@ static void test_mp4_demux_get_track_sample(void)
 
 		(void)mp4_demux_open(path, &demux);
 
-		for (size_t j = 0;
+		for (unsigned int j = 0;
 		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {
@@ -1144,7 +1168,7 @@ static void test_mp4_demux_get_track_metadata_strings(void)
 			&values);
 		CU_ASSERT_EQUAL(res, -ENOENT);
 
-		for (size_t j = 0;
+		for (unsigned int j = 0;
 		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {
@@ -1265,7 +1289,7 @@ static void test_mp4_demux_get_track_audio_specific_config(void)
 			&asc_size);
 		CU_ASSERT_EQUAL(res, -ENOENT);
 
-		for (size_t j = 0;
+		for (unsigned int j = 0;
 		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {
@@ -1329,7 +1353,7 @@ static void test_mp4_demux_get_track_video_decoder_config(void)
 			&vdc);
 		CU_ASSERT_EQUAL(res, -ENOENT);
 
-		for (size_t j = 0;
+		for (unsigned int j = 0;
 		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {
@@ -1393,7 +1417,7 @@ static void test_mp4_demux_get_track_info(void)
 			&track_info);
 		CU_ASSERT_EQUAL(res, -ENOENT);
 
-		for (size_t j = 0;
+		for (unsigned int j = 0;
 		     j < assets_tests_mp4_demux[i]
 				 .expected_results.media_info.track_count;
 		     j++) {

@@ -75,7 +75,8 @@ void mp4_box_destroy(struct mp4_box *box)
 	if (box == NULL)
 		return;
 
-	struct mp4_box *child = NULL, *tmp = NULL;
+	struct mp4_box *child = NULL;
+	struct mp4_box *tmp = NULL;
 	list_walk_entry_forward_safe(&box->children, child, tmp, node)
 	{
 		mp4_box_destroy(child);
@@ -89,7 +90,7 @@ void mp4_box_destroy(struct mp4_box *box)
 }
 
 
-static void mp4_box_log_internal(struct mp4_box *box,
+static void mp4_box_log_internal(const struct mp4_box *box,
 				 int level,
 				 int last,
 				 uint64_t level_bf)
@@ -106,9 +107,8 @@ static void mp4_box_log_internal(struct mp4_box *box,
 		level_bf &= ~(UINT64_C(1) << (indent - 1));
 	for (unsigned int i = 0; i < indent; i++) {
 		int pipe = !!(level_bf & (UINT64_C(1) << i));
-		spaces[2 * i] = (last && i == indent - 1) ? '\\'
-				: pipe			  ? '|'
-							  : ' ';
+		char pipec = pipe ? '|' : ' ';
+		spaces[2 * i] = (last && i == indent - 1) ? '\\' : pipec;
 		spaces[2 * i + 1] = (i == indent - 1) ? '-' : ' ';
 	}
 	spaces[indent * 2] = '\0';
@@ -125,7 +125,7 @@ static void mp4_box_log_internal(struct mp4_box *box,
 		 isprint(d) ? d : '.',
 		 (box->size == 1) ? box->largesize : box->size);
 
-	struct mp4_box *child = NULL;
+	const struct mp4_box *child = NULL;
 	level_bf |= UINT64_C(1) << indent;
 	list_walk_entry_forward(&box->children, child, node)
 	{
@@ -137,7 +137,7 @@ static void mp4_box_log_internal(struct mp4_box *box,
 }
 
 
-void mp4_box_log(struct mp4_box *box, int level)
+void mp4_box_log(const struct mp4_box *box, int level)
 {
 	mp4_box_log_internal(box, level, 0, 0);
 }
@@ -146,8 +146,7 @@ void mp4_box_log(struct mp4_box *box, int level)
 /**
  * ISO/IEC 14496-12 - chap. 4.3 - File Type Box
  */
-static off_t
-mp4_box_ftyp_read(struct mp4_file *mp4, struct mp4_box *box, off_t maxBytes)
+static off_t mp4_box_ftyp_read(const struct mp4_file *mp4, off_t maxBytes)
 {
 	off_t boxReadBytes = 0;
 	uint32_t val32;
@@ -192,8 +191,7 @@ mp4_box_ftyp_read(struct mp4_file *mp4, struct mp4_box *box, off_t maxBytes)
 /**
  * ISO/IEC 14496-12 - chap. 8.2.2 - Movie Header Box
  */
-static off_t
-mp4_box_mvhd_read(struct mp4_file *mp4, struct mp4_box *box, off_t maxBytes)
+static off_t mp4_box_mvhd_read(struct mp4_file *mp4, off_t maxBytes)
 {
 	off_t boxReadBytes = 0;
 	uint32_t val32;
@@ -313,12 +311,11 @@ mp4_box_mvhd_read(struct mp4_file *mp4, struct mp4_box *box, off_t maxBytes)
 	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 	/* 'matrix' */
-	int k;
-	for (k = 0; k < 9; k++)
+	for (int k = 0; k < 9; k++)
 		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 	/* 'pre_defined' */
-	for (k = 0; k < 6; k++)
+	for (int k = 0; k < 6; k++)
 		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 	/* 'next_track_ID' */
@@ -336,8 +333,7 @@ mp4_box_mvhd_read(struct mp4_file *mp4, struct mp4_box *box, off_t maxBytes)
 /**
  * ISO/IEC 14496-12 - chap. 8.3.2 - Track Header Box
  */
-static off_t mp4_box_tkhd_read(struct mp4_file *mp4,
-			       struct mp4_box *box,
+static off_t mp4_box_tkhd_read(const struct mp4_file *mp4,
 			       off_t maxBytes,
 			       struct mp4_track *track)
 {
@@ -427,17 +423,14 @@ static off_t mp4_box_tkhd_read(struct mp4_file *mp4,
 		/* 'duration' */
 		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		uint32_t duration = ntohl(val32);
-		unsigned int hrs =
-			(unsigned int)((duration + mp4->timescale / 2) /
-				       mp4->timescale / 60 / 60);
+		unsigned int hrs = ((duration + mp4->timescale / 2) /
+				    mp4->timescale / 60 / 60);
 		unsigned int min =
-			(unsigned int)((duration + mp4->timescale / 2) /
-					       mp4->timescale / 60 -
-				       hrs * 60);
+			((duration + mp4->timescale / 2) / mp4->timescale / 60 -
+			 hrs * 60);
 		unsigned int sec =
-			(unsigned int)((duration + mp4->timescale / 2) /
-					       mp4->timescale -
-				       hrs * 60 * 60 - min * 60);
+			((duration + mp4->timescale / 2) / mp4->timescale -
+			 hrs * 60 * 60 - min * 60);
 		ULOGD("- tkhd: duration=%" PRIu32 " (%02d:%02d:%02d)",
 		      duration,
 		      hrs,
@@ -462,8 +455,7 @@ static off_t mp4_box_tkhd_read(struct mp4_file *mp4,
 	ULOGD("- tkhd: volume=%.2f", volume);
 
 	/* 'matrix' */
-	int k;
-	for (k = 0; k < 9; k++)
+	for (unsigned int k = 0; k < 9; k++)
 		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 	/* 'width' */
@@ -486,8 +478,7 @@ static off_t mp4_box_tkhd_read(struct mp4_file *mp4,
 /**
  * ISO/IEC 14496-12 - chap. 8.3.3 - Track Reference Box
  */
-static off_t mp4_box_tref_read(struct mp4_file *mp4,
-			       struct mp4_box *box,
+static off_t mp4_box_tref_read(const struct mp4_file *mp4,
 			       off_t maxBytes,
 			       struct mp4_track *track)
 {
@@ -522,7 +513,7 @@ static off_t mp4_box_tref_read(struct mp4_file *mp4,
 		ULOGD("- tref: track_id=%" PRIu32,
 		      track->referenceTrackId[track->referenceTrackIdCount]);
 		track->referenceTrackIdCount++;
-	};
+	}
 
 	if (maxBytes - boxReadBytes > 0) {
 		ULOGW("tref: track_IDs count exceeds internal max count (%d) - "
@@ -540,8 +531,7 @@ static off_t mp4_box_tref_read(struct mp4_file *mp4,
 /**
  * ISO/IEC 14496-12 - chap. 8.4.2 - Media Header Box
  */
-static off_t mp4_box_mdhd_read(struct mp4_file *mp4,
-			       struct mp4_box *box,
+static off_t mp4_box_mdhd_read(const struct mp4_file *mp4,
 			       off_t maxBytes,
 			       struct mp4_track *track)
 {
@@ -668,10 +658,7 @@ static off_t mp4_box_mdhd_read(struct mp4_file *mp4,
 /**
  * ISO/IEC 14496-12 - chap. 8.4.5.2 - Video Media Header Box
  */
-static off_t mp4_box_vmhd_read(struct mp4_file *mp4,
-			       struct mp4_box *box,
-			       off_t maxBytes,
-			       struct mp4_track *track)
+static off_t mp4_box_vmhd_read(const struct mp4_file *mp4, off_t maxBytes)
 {
 	off_t boxReadBytes = 0;
 	uint32_t val32;
@@ -715,10 +702,7 @@ static off_t mp4_box_vmhd_read(struct mp4_file *mp4,
 /**
  * ISO/IEC 14496-12 - chap. 8.4.5.3 - Sound Media Header Box
  */
-static off_t mp4_box_smhd_read(struct mp4_file *mp4,
-			       struct mp4_box *box,
-			       off_t maxBytes,
-			       struct mp4_track *track)
+static off_t mp4_box_smhd_read(const struct mp4_file *mp4, off_t maxBytes)
 {
 	off_t boxReadBytes = 0;
 	uint32_t val32;
@@ -749,10 +733,7 @@ static off_t mp4_box_smhd_read(struct mp4_file *mp4,
 /**
  * ISO/IEC 14496-12 - chap. 8.4.5.4 - Hint Media Header Box
  */
-static off_t mp4_box_hmhd_read(struct mp4_file *mp4,
-			       struct mp4_box *box,
-			       off_t maxBytes,
-			       struct mp4_track *track)
+static off_t mp4_box_hmhd_read(const struct mp4_file *mp4, off_t maxBytes)
 {
 	off_t boxReadBytes = 0;
 	uint32_t val32;
@@ -767,7 +748,7 @@ static off_t mp4_box_hmhd_read(struct mp4_file *mp4,
 	ULOGD("- hmhd: version=%d", version);
 	ULOGD("- hmhd: flags=%" PRIu32, flags);
 
-	/* 'maxPDUsize' & 'avgPDUsize' */
+	/* 'maxPDUsize' and 'avgPDUsize' */
 	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	uint16_t maxPDUsize = (uint16_t)((ntohl(val32) >> 16) & 0xFFFF);
 	uint16_t avgPDUsize = (uint16_t)(ntohl(val32) & 0xFFFF);
@@ -797,10 +778,7 @@ static off_t mp4_box_hmhd_read(struct mp4_file *mp4,
 /**
  * ISO/IEC 14496-12 - chap. 8.4.5.5 - Null Media Header Box
  */
-static off_t mp4_box_nmhd_read(struct mp4_file *mp4,
-			       struct mp4_box *box,
-			       off_t maxBytes,
-			       struct mp4_track *track)
+static off_t mp4_box_nmhd_read(const struct mp4_file *mp4, off_t maxBytes)
 {
 	off_t boxReadBytes = 0;
 	uint32_t val32;
@@ -825,8 +803,8 @@ static off_t mp4_box_nmhd_read(struct mp4_file *mp4,
 /**
  * ISO/IEC 14496-12 - chap. 8.4.3 - Handler Reference Box
  */
-static off_t mp4_box_hdlr_read(struct mp4_file *mp4,
-			       struct mp4_box *box,
+static off_t mp4_box_hdlr_read(const struct mp4_file *mp4,
+			       const struct mp4_box *box,
 			       off_t maxBytes,
 			       struct mp4_track *track)
 {
@@ -855,7 +833,7 @@ static off_t mp4_box_hdlr_read(struct mp4_file *mp4,
 	      (char)((handlerType >> 8) & 0xFF),
 	      (char)(handlerType & 0xFF));
 
-	if ((track) && (box) && (box->parent) &&
+	if (track && box && box->parent &&
 	    (box->parent->type == MP4_MEDIA_BOX)) {
 		switch (handlerType) {
 		case MP4_HANDLER_TYPE_VIDEO:
@@ -885,15 +863,15 @@ static off_t mp4_box_hdlr_read(struct mp4_file *mp4,
 		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 	char name[100];
-	for (k = 0; (k < sizeof(name) - 2) && (boxReadBytes < maxBytes); k++) {
+	memset(name, 0, sizeof(name));
+	for (k = 0; (k < sizeof(name) - 1) && (boxReadBytes < maxBytes); k++) {
 		MP4_READ_8(mp4->fd, name[k], boxReadBytes);
 		if (name[k] == '\0')
 			break;
 	}
-	name[k + 1] = '\0';
 	ULOGD("- hdlr: name=%s", name);
 
-	if ((track) && (box) && (box->parent) &&
+	if (track && box && box->parent &&
 	    (box->parent->type == MP4_MEDIA_BOX)) {
 		free(track->name);
 		track->name = strdup(name);
@@ -909,10 +887,12 @@ static off_t mp4_box_hdlr_read(struct mp4_file *mp4,
 /**
  * ISO/IEC 14496-15 - chap. 5.3.3.1 - AVC decoder configuration record
  */
-static off_t
-mp4_box_avcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
+static off_t mp4_box_avcc_read(const struct mp4_file *mp4,
+			       off_t maxBytes,
+			       struct mp4_track *track)
 {
-	off_t boxReadBytes = 0, minBytes = 6;
+	off_t boxReadBytes = 0;
+	off_t minBytes = 6;
 	uint32_t val32;
 	uint16_t val16;
 
@@ -932,7 +912,7 @@ mp4_box_avcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 	ULOGD("- avcC: profile_compat=%d", profile_compat);
 	ULOGD("- avcC: level=%d", level);
 
-	/* 'length_size' & 'sps_count' */
+	/* 'length_size' and 'sps_count' */
 	MP4_READ_16(mp4->fd, val16, boxReadBytes);
 	val16 = htons(val16);
 	uint8_t lengthSize = ((val16 >> 8) & 0x3) + 1;
@@ -953,7 +933,7 @@ mp4_box_avcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 		minBytes += spsLength;
 		CHECK_SIZE(maxBytes, minBytes);
 
-		if ((!track->vdc.avc.sps) && (spsLength)) {
+		if ((!track->vdc.avc.sps) && spsLength) {
 			/* First SPS found */
 			track->vdc.avc.sps_size = spsLength;
 			track->vdc.avc.sps = malloc(spsLength);
@@ -1002,7 +982,7 @@ mp4_box_avcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 		minBytes += ppsLength;
 		CHECK_SIZE(maxBytes, minBytes);
 
-		if ((!track->vdc.avc.pps) && (ppsLength)) {
+		if ((!track->vdc.avc.pps) && ppsLength) {
 			/* First PPS found */
 			track->vdc.avc.pps_size = ppsLength;
 			track->vdc.avc.pps = malloc(ppsLength);
@@ -1037,13 +1017,16 @@ mp4_box_avcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 /**
  * ISO/IEC 14496-15 - chap. 8.3.3.1.2 - HVCC decoder configuration record
  */
-static off_t
-mp4_box_hvcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
+static off_t mp4_box_hvcc_read(const struct mp4_file *mp4,
+			       off_t maxBytes,
+			       struct mp4_track *track)
 {
-	off_t boxReadBytes = 0, minBytes = 22;
+	off_t boxReadBytes = 0;
+	off_t minBytes = 22;
 	uint32_t val32;
 	uint16_t val16;
-	uint8_t val8, nb_arrays;
+	uint8_t val8;
+	uint8_t nb_arrays;
 	struct mp4_hvcc_info *hvcc;
 
 	ULOG_ERRNO_RETURN_ERR_IF(track == NULL, EINVAL);
@@ -1143,7 +1126,8 @@ mp4_box_hvcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 	ULOGD("- hvcC: array_size=%d", nb_arrays);
 
 	for (int i = 0; i < nb_arrays; i++) {
-		uint8_t array_completeness, nalu_type;
+		uint8_t array_completeness;
+		uint8_t nalu_type;
 		uint16_t nb_nalus;
 
 		ULOGD("- hvcC:     ------------------ NALU #%d", i);
@@ -1247,11 +1231,13 @@ mp4_box_hvcc_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 /**
  * ISO/IEC 14496-14 - chap. 5.6 - Sample Description Boxes
  */
-static off_t
-mp4_box_esds_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
+static off_t mp4_box_esds_read(const struct mp4_file *mp4,
+			       off_t maxBytes,
+			       struct mp4_track *track)
 {
 	int ret;
-	off_t boxReadBytes = 0, minBytes = 9;
+	off_t boxReadBytes = 0;
+	off_t minBytes = 9;
 	uint32_t val32;
 	uint16_t val16;
 	uint8_t val8;
@@ -1409,7 +1395,7 @@ mp4_box_esds_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 			ret = -errno;
 			ULOG_ERRNO("read", -ret);
 			return ret;
-		} else if (count != (ssize_t)size) {
+		} else if (count != size) {
 			ret = -ENODATA;
 			ULOG_ERRNO("read", -ret);
 			return ret;
@@ -1436,14 +1422,15 @@ mp4_box_esds_read(struct mp4_file *mp4, off_t maxBytes, struct mp4_track *track)
 /**
  * ISO/IEC 14496-12 - chap. 8.5.2 - Sample Description Box
  */
-static off_t mp4_box_stsd_read(struct mp4_file *mp4,
-			       struct mp4_box *box,
+static off_t mp4_box_stsd_read(const struct mp4_file *mp4,
 			       off_t maxBytes,
 			       struct mp4_track *track)
 {
-	off_t boxReadBytes = 0, ret;
+	off_t boxReadBytes = 0;
+	off_t ret;
 	uint32_t val32;
 	uint16_t val16;
+	size_t len;
 
 	ULOG_ERRNO_RETURN_ERR_IF(track == NULL, EINVAL);
 
@@ -1467,8 +1454,7 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 		return -EPROTO;
 	}
 
-	unsigned int i;
-	for (i = 0; i < entryCount; i++) {
+	for (unsigned int i = 0; i < entryCount; i++) {
 		switch (track->type) {
 		case MP4_TRACK_TYPE_VIDEO: {
 			ULOGD("- stsd: video handler type");
@@ -1499,8 +1485,7 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 			ULOGD("- stsd: data_reference_index=%" PRIu16,
 			      dataReferenceIndex);
 
-			int k;
-			for (k = 0; k < 4; k++) {
+			for (int k = 0; k < 4; k++) {
 				/* 'pre_defined' & 'reserved' */
 				MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			}
@@ -1665,7 +1650,7 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 			      (char)(codec & 0xFF));
 
 			if (codec == MP4_AUDIO_DECODER_CONFIG_BOX) {
-				off_t ret = mp4_box_esds_read(
+				ret = mp4_box_esds_read(
 					mp4, maxBytes - boxReadBytes, track);
 				if (ret < 0) {
 					ULOGE("mp4_box_esds_read() failed"
@@ -1710,28 +1695,30 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 			ULOGD("- stsd: size=%d", dataReferenceIndex);
 
 			char str[1000];
+			memset(str, 0, sizeof(str));
 			unsigned int k;
 			for (k = 0;
-			     (k < sizeof(str) - 2) && (boxReadBytes < maxBytes);
+			     (k < sizeof(str) - 1) && (boxReadBytes < maxBytes);
 			     k++) {
 				MP4_READ_8(mp4->fd, str[k], boxReadBytes);
 				if (str[k] == '\0')
 					break;
 			}
-			str[k + 1] = '\0';
-			if (strlen(str) > 0)
+			len = mp4_validate_str_len(str, sizeof(str));
+			if (len > 0)
 				track->contentEncoding = strdup(str);
 			ULOGD("- stsd: content_encoding=%s", str);
 
+			memset(str, 0, sizeof(str));
 			for (k = 0;
-			     (k < sizeof(str) - 2) && (boxReadBytes < maxBytes);
+			     (k < sizeof(str) - 1) && (boxReadBytes < maxBytes);
 			     k++) {
 				MP4_READ_8(mp4->fd, str[k], boxReadBytes);
 				if (str[k] == '\0')
 					break;
 			}
-			str[k + 1] = '\0';
-			if (strlen(str) > 0)
+			len = mp4_validate_str_len(str, sizeof(str));
+			if (len > 0)
 				track->mimeFormat = strdup(str);
 			ULOGD("- stsd: mime_format=%s", str);
 
@@ -1756,8 +1743,7 @@ static off_t mp4_box_stsd_read(struct mp4_file *mp4,
 /**
  * ISO/IEC 14496-12 - chap. 8.6.1.2 - Decoding Time to Sample Box
  */
-static off_t mp4_box_stts_read(struct mp4_file *mp4,
-			       struct mp4_box *box,
+static off_t mp4_box_stts_read(const struct mp4_file *mp4,
 			       off_t maxBytes,
 			       struct mp4_track *track)
 {
@@ -1802,8 +1788,7 @@ static off_t mp4_box_stts_read(struct mp4_file *mp4,
 
 	CHECK_SIZE(maxBytes, 8 + track->timeToSampleEntryCount * 8);
 
-	unsigned int i;
-	for (i = 0; i < track->timeToSampleEntryCount; i++) {
+	for (unsigned int i = 0; i < track->timeToSampleEntryCount; i++) {
 		/* 'sample_count' */
 		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->timeToSampleEntries[i].sampleCount = ntohl(val32);
@@ -1828,8 +1813,7 @@ static off_t mp4_box_stts_read(struct mp4_file *mp4,
 /**
  * ISO/IEC 14496-12 - chap. 8.6.2 - Sync Sample Box
  */
-static off_t mp4_box_stss_read(struct mp4_file *mp4,
-			       struct mp4_box *box,
+static off_t mp4_box_stss_read(const struct mp4_file *mp4,
 			       off_t maxBytes,
 			       struct mp4_track *track)
 {
@@ -1873,8 +1857,7 @@ static off_t mp4_box_stss_read(struct mp4_file *mp4,
 
 	CHECK_SIZE(maxBytes, 8 + track->syncSampleEntryCount * 4);
 
-	unsigned int i;
-	for (i = 0; i < track->syncSampleEntryCount; i++) {
+	for (unsigned int i = 0; i < track->syncSampleEntryCount; i++) {
 		/* 'sample_number' */
 		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->syncSampleEntries[i] = ntohl(val32);
@@ -1894,8 +1877,7 @@ static off_t mp4_box_stss_read(struct mp4_file *mp4,
 /**
  * ISO/IEC 14496-12 - chap. 8.7.3.2 - Sample Size Box
  */
-static off_t mp4_box_stsz_read(struct mp4_file *mp4,
-			       struct mp4_box *box,
+static off_t mp4_box_stsz_read(const struct mp4_file *mp4,
 			       off_t maxBytes,
 			       struct mp4_track *track)
 {
@@ -1943,8 +1925,7 @@ static off_t mp4_box_stsz_read(struct mp4_file *mp4,
 	if (sampleSize == 0) {
 		CHECK_SIZE(maxBytes, 12 + track->sampleCount * 4);
 
-		unsigned int i;
-		for (i = 0; i < track->sampleCount; i++) {
+		for (unsigned int i = 0; i < track->sampleCount; i++) {
 			/* 'entry_size' */
 			MP4_READ_32(mp4->fd, val32, boxReadBytes);
 			track->sampleSize[i] = ntohl(val32);
@@ -1956,8 +1937,7 @@ static off_t mp4_box_stsz_read(struct mp4_file *mp4,
 #endif /* LOG_ALL */
 		}
 	} else {
-		unsigned int i;
-		for (i = 0; i < track->sampleCount; i++)
+		for (unsigned int i = 0; i < track->sampleCount; i++)
 			track->sampleSize[i] = sampleSize;
 	}
 
@@ -1971,8 +1951,7 @@ static off_t mp4_box_stsz_read(struct mp4_file *mp4,
 /**
  * ISO/IEC 14496-12 - chap. 8.7.4 - Sample To Chunk Box
  */
-static off_t mp4_box_stsc_read(struct mp4_file *mp4,
-			       struct mp4_box *box,
+static off_t mp4_box_stsc_read(const struct mp4_file *mp4,
 			       off_t maxBytes,
 			       struct mp4_track *track)
 {
@@ -2017,8 +1996,7 @@ static off_t mp4_box_stsc_read(struct mp4_file *mp4,
 
 	CHECK_SIZE(maxBytes, 8 + track->sampleToChunkEntryCount * 12);
 
-	unsigned int i;
-	for (i = 0; i < track->sampleToChunkEntryCount; i++) {
+	for (unsigned int i = 0; i < track->sampleToChunkEntryCount; i++) {
 		/* 'first_chunk' */
 		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->sampleToChunkEntries[i].firstChunk = ntohl(val32);
@@ -2055,8 +2033,7 @@ static off_t mp4_box_stsc_read(struct mp4_file *mp4,
 /**
  * ISO/IEC 14496-12 - chap. 8.7.5 - Chunk Offset Box (32-bit)
  */
-static off_t mp4_box_stco_read(struct mp4_file *mp4,
-			       struct mp4_box *box,
+static off_t mp4_box_stco_read(const struct mp4_file *mp4,
 			       off_t maxBytes,
 			       struct mp4_track *track)
 {
@@ -2098,8 +2075,7 @@ static off_t mp4_box_stco_read(struct mp4_file *mp4,
 
 	CHECK_SIZE(maxBytes, 8 + track->chunkCount * 4);
 
-	unsigned int i;
-	for (i = 0; i < track->chunkCount; i++) {
+	for (unsigned int i = 0; i < track->chunkCount; i++) {
 		/* 'chunk_offset' */
 		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->chunkOffset[i] = (uint64_t)ntohl(val32);
@@ -2118,8 +2094,7 @@ static off_t mp4_box_stco_read(struct mp4_file *mp4,
 /**
  * ISO/IEC 14496-12 - chap. 8.7.5 - Chunk Offset Box (64-bit)
  */
-static off_t mp4_box_co64_read(struct mp4_file *mp4,
-			       struct mp4_box *box,
+static off_t mp4_box_co64_read(const struct mp4_file *mp4,
 			       off_t maxBytes,
 			       struct mp4_track *track)
 {
@@ -2161,8 +2136,7 @@ static off_t mp4_box_co64_read(struct mp4_file *mp4,
 
 	CHECK_SIZE(maxBytes, 8 + track->chunkCount * 8);
 
-	unsigned int i;
-	for (i = 0; i < track->chunkCount; i++) {
+	for (unsigned int i = 0; i < track->chunkCount; i++) {
 		/* 'chunk_offset' */
 		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		track->chunkOffset[i] = (uint64_t)ntohl(val32) << 32;
@@ -2184,9 +2158,8 @@ static off_t mp4_box_co64_read(struct mp4_file *mp4,
  * Android-specific 'xyz' location box
  */
 static off_t mp4_box_xyz_read(struct mp4_file *mp4,
-			      struct mp4_box *box,
-			      off_t maxBytes,
-			      struct mp4_track *track)
+			      const struct mp4_box *box,
+			      off_t maxBytes)
 {
 	int ret;
 	off_t boxReadBytes = 0;
@@ -2254,19 +2227,23 @@ static off_t mp4_box_xyz_read(struct mp4_file *mp4,
  * Apple QuickTime File Format - chap. Metadata
  * https://developer.apple.com/library/archive/documentation/QuickTime/QTFF/Metadata/Metadata.html
  */
-static int mp4_ilst_sub_box_count(struct mp4_file *mp4,
-				  struct mp4_box *box,
-				  off_t maxBytes,
-				  struct mp4_track *track)
+static int mp4_ilst_sub_box_count(const struct mp4_file *mp4, off_t maxBytes)
 {
-	off_t totalReadBytes = 0, boxReadBytes = 0;
-	off_t originalOffset, realBoxSize;
+	off_t totalReadBytes = 0;
+	off_t boxReadBytes = 0;
+	off_t originalOffset;
+	off_t realBoxSize;
 	uint32_t val32;
-	int lastBox = 0, count = 0;
+	int lastBox = 0;
+	int count = 0;
 
 	CHECK_SIZE(maxBytes, 8);
 
 	originalOffset = lseek(mp4->fd, 0, SEEK_CUR);
+	if (originalOffset == -1) {
+		ULOG_ERRNO("lseek", errno);
+		return -errno;
+	}
 
 	while ((totalReadBytes + 8 <= maxBytes) && (!lastBox)) {
 		boxReadBytes = 0;
@@ -2322,15 +2299,15 @@ static int mp4_ilst_sub_box_count(struct mp4_file *mp4,
  * https://developer.apple.com/library/archive/documentation/QuickTime/QTFF/Metadata/Metadata.html
  */
 static off_t mp4_box_meta_keys_read(struct mp4_file *mp4,
-				    struct mp4_box *box,
 				    off_t maxBytes,
 				    struct mp4_track *track)
 {
 	int ret;
 	off_t boxReadBytes = 0;
-	uint32_t val32, i;
+	uint32_t val32;
 	unsigned int metadataCount;
-	char **metadataKey, **metadataValue;
+	char **metadataKey;
+	char **metadataValue;
 
 	CHECK_SIZE(maxBytes, 8);
 
@@ -2377,7 +2354,7 @@ static off_t mp4_box_meta_keys_read(struct mp4_file *mp4,
 		mp4->metaMetadataValue = metadataValue;
 	}
 
-	for (i = 0; i < metadataCount; i++) {
+	for (uint32_t i = 0; i < metadataCount; i++) {
 		/* 'key_size' */
 		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 		uint32_t keySize = ntohl(val32);
@@ -2435,7 +2412,7 @@ static off_t mp4_box_meta_keys_read(struct mp4_file *mp4,
  * https://developer.apple.com/library/archive/documentation/QuickTime/QTFF/Metadata/Metadata.html
  */
 static off_t mp4_box_meta_data_read(struct mp4_file *mp4,
-				    struct mp4_box *box,
+				    const struct mp4_box *box,
 				    off_t maxBytes,
 				    struct mp4_track *track)
 {
@@ -2443,7 +2420,8 @@ static off_t mp4_box_meta_data_read(struct mp4_file *mp4,
 	off_t boxReadBytes = 0;
 	uint32_t val32;
 	unsigned int metadataCount;
-	char **metadataKey, **metadataValue;
+	char **metadataKey;
+	char **metadataValue;
 
 	ULOG_ERRNO_RETURN_ERR_IF(box->parent == NULL, EINVAL);
 
@@ -2570,6 +2548,8 @@ static off_t mp4_box_meta_data_read(struct mp4_file *mp4,
 				mp4->udtaCoverType =
 					MP4_METADATA_COVER_TYPE_BMP;
 				break;
+			default:
+				break;
 			}
 			ULOGD("- data: udta cover size=%d type=%d",
 			      mp4->udtaCoverSize,
@@ -2591,6 +2571,8 @@ static off_t mp4_box_meta_data_read(struct mp4_file *mp4,
 			case MP4_METADATA_CLASS_BMP:
 				mp4->metaCoverType =
 					MP4_METADATA_COVER_TYPE_BMP;
+				break;
+			default:
 				break;
 			}
 			ULOGD("- data: meta cover size=%d type=%d",
@@ -2614,7 +2596,9 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 	off_t parentReadBytes = 0;
 	off_t currOff = 0;
 	off_t eof = 0;
-	int ret = 0, firstBox = 1, lastBox = 0;
+	int ret = 0;
+	int firstBox = 1;
+	int lastBox = 0;
 
 	ULOG_ERRNO_RETURN_ERR_IF(mp4 == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(parent == NULL, EINVAL);
@@ -2639,7 +2623,8 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 	}
 
 	while (currOff < eof && !lastBox && (parentReadBytes + 8 < maxBytes)) {
-		off_t boxReadBytes = 0, realBoxSize;
+		off_t boxReadBytes = 0;
+		off_t realBoxSize;
 		uint32_t val32;
 
 		/* Keep the box in the tree */
@@ -2658,11 +2643,10 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		box->type = ntohl(val32);
 
 		/* MP4 file format validity: the first box should be 'ftyp' */
-		if ((parent->level == 0) && (firstBox)) {
-			if (box->type != MP4_FILE_TYPE_BOX) {
-				ULOGE("invalid mp4 file: 'ftyp' not found");
-				return -EPROTO;
-			}
+		if ((parent->level == 0) && firstBox &&
+		    (box->type != MP4_FILE_TYPE_BOX)) {
+			ULOGE("invalid mp4 file: 'ftyp' not found");
+			return -EPROTO;
 		}
 
 		if ((parent->type == MP4_ILST_BOX) &&
@@ -2749,7 +2733,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		}
 		case MP4_FILE_TYPE_BOX: {
 			off_t _ret = mp4_box_ftyp_read(
-				mp4, box, realBoxSize - boxReadBytes);
+				mp4, realBoxSize - boxReadBytes);
 			if (_ret < 0)
 				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
@@ -2757,7 +2741,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		}
 		case MP4_MOVIE_HEADER_BOX: {
 			off_t _ret = mp4_box_mvhd_read(
-				mp4, box, realBoxSize - boxReadBytes);
+				mp4, realBoxSize - boxReadBytes);
 			if (_ret < 0)
 				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
@@ -2780,7 +2764,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		}
 		case MP4_TRACK_HEADER_BOX: {
 			off_t _ret = mp4_box_tkhd_read(
-				mp4, box, realBoxSize - boxReadBytes, track);
+				mp4, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
 				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
@@ -2788,7 +2772,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		}
 		case MP4_TRACK_REFERENCE_BOX: {
 			off_t _ret = mp4_box_tref_read(
-				mp4, box, realBoxSize - boxReadBytes, track);
+				mp4, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
 				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
@@ -2804,7 +2788,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		}
 		case MP4_MEDIA_HEADER_BOX: {
 			off_t _ret = mp4_box_mdhd_read(
-				mp4, box, realBoxSize - boxReadBytes, track);
+				mp4, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
 				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
@@ -2812,7 +2796,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		}
 		case MP4_VIDEO_MEDIA_HEADER_BOX: {
 			off_t _ret = mp4_box_vmhd_read(
-				mp4, box, realBoxSize - boxReadBytes, track);
+				mp4, realBoxSize - boxReadBytes);
 			if (_ret < 0)
 				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
@@ -2820,7 +2804,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		}
 		case MP4_SOUND_MEDIA_HEADER_BOX: {
 			off_t _ret = mp4_box_smhd_read(
-				mp4, box, realBoxSize - boxReadBytes, track);
+				mp4, realBoxSize - boxReadBytes);
 			if (_ret < 0)
 				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
@@ -2828,7 +2812,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		}
 		case MP4_HINT_MEDIA_HEADER_BOX: {
 			off_t _ret = mp4_box_hmhd_read(
-				mp4, box, realBoxSize - boxReadBytes, track);
+				mp4, realBoxSize - boxReadBytes);
 			if (_ret < 0)
 				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
@@ -2836,7 +2820,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		}
 		case MP4_NULL_MEDIA_HEADER_BOX: {
 			off_t _ret = mp4_box_nmhd_read(
-				mp4, box, realBoxSize - boxReadBytes, track);
+				mp4, realBoxSize - boxReadBytes);
 			if (_ret < 0)
 				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
@@ -2844,7 +2828,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		}
 		case MP4_SAMPLE_DESCRIPTION_BOX: {
 			off_t _ret = mp4_box_stsd_read(
-				mp4, box, realBoxSize - boxReadBytes, track);
+				mp4, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
 				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
@@ -2852,7 +2836,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		}
 		case MP4_DECODING_TIME_TO_SAMPLE_BOX: {
 			off_t _ret = mp4_box_stts_read(
-				mp4, box, realBoxSize - boxReadBytes, track);
+				mp4, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
 				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
@@ -2860,7 +2844,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		}
 		case MP4_SYNC_SAMPLE_BOX: {
 			off_t _ret = mp4_box_stss_read(
-				mp4, box, realBoxSize - boxReadBytes, track);
+				mp4, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
 				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
@@ -2868,7 +2852,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		}
 		case MP4_SAMPLE_SIZE_BOX: {
 			off_t _ret = mp4_box_stsz_read(
-				mp4, box, realBoxSize - boxReadBytes, track);
+				mp4, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
 				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
@@ -2876,7 +2860,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		}
 		case MP4_SAMPLE_TO_CHUNK_BOX: {
 			off_t _ret = mp4_box_stsc_read(
-				mp4, box, realBoxSize - boxReadBytes, track);
+				mp4, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
 				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
@@ -2884,7 +2868,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		}
 		case MP4_CHUNK_OFFSET_BOX: {
 			off_t _ret = mp4_box_stco_read(
-				mp4, box, realBoxSize - boxReadBytes, track);
+				mp4, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
 				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
@@ -2892,7 +2876,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		}
 		case MP4_CHUNK_OFFSET_64_BOX: {
 			off_t _ret = mp4_box_co64_read(
-				mp4, box, realBoxSize - boxReadBytes, track);
+				mp4, realBoxSize - boxReadBytes, track);
 			if (_ret < 0)
 				return OFF_T_TO_ERRNO(_ret, EPROTO);
 			boxReadBytes += _ret;
@@ -2944,10 +2928,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 					return -EPROTO;
 				}
 				int count = mp4_ilst_sub_box_count(
-					mp4,
-					box,
-					realBoxSize - boxReadBytes,
-					track);
+					mp4, realBoxSize - boxReadBytes);
 				if (count < 0)
 					return count;
 				/* Free previous metadata. This fixes a memory
@@ -3012,10 +2993,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		case MP4_LOCATION_BOX: {
 			if (parent->type == MP4_USER_DATA_BOX) {
 				off_t _ret = mp4_box_xyz_read(
-					mp4,
-					box,
-					realBoxSize - boxReadBytes,
-					track);
+					mp4, box, realBoxSize - boxReadBytes);
 				if (_ret < 0)
 					return OFF_T_TO_ERRNO(_ret, EPROTO);
 				boxReadBytes += _ret;
@@ -3025,10 +3003,7 @@ off_t mp4_box_children_read(struct mp4_file *mp4,
 		case MP4_KEYS_BOX: {
 			if (parent->type == MP4_META_BOX) {
 				off_t _ret = mp4_box_meta_keys_read(
-					mp4,
-					box,
-					realBoxSize - boxReadBytes,
-					track);
+					mp4, realBoxSize - boxReadBytes, track);
 				if (_ret < 0)
 					return OFF_T_TO_ERRNO(_ret, EPROTO);
 				boxReadBytes += _ret;
@@ -3146,10 +3121,9 @@ MP4_API int mp4_generate_chapter_sample(const char *chapter_str,
 	size_t buf_size = 0;
 	size_t chap_len = 0;
 
-	ULOG_ERRNO_RETURN_ERR_IF(chapter_str == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(buffer == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(buffer_size == NULL, EINVAL);
-	chap_len = strlen(chapter_str);
+	chap_len = (uint16_t)mp4_validate_str_len(chapter_str, NAME_MAX);
 	ULOG_ERRNO_RETURN_ERR_IF(chap_len < 1, EINVAL);
 
 	buf_size = sizeof(val16) + chap_len + 1;
