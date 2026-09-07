@@ -298,12 +298,12 @@ static off_t mp4_box_mvhd_read(struct mp4_file *mp4, off_t maxBytes)
 
 	/* 'rate' */
 	MP4_READ_32(mp4->fd, val32, boxReadBytes);
-	float rate = (float)ntohl(val32) / 65536.;
+	float rate = (float)ntohl(val32) / 65536.f;
 	ULOGD("- mvhd: rate=%.4f", rate);
 
 	/* 'volume' & 'reserved' */
 	MP4_READ_32(mp4->fd, val32, boxReadBytes);
-	float volume = (float)((ntohl(val32) >> 16) & 0xFFFF) / 256.;
+	float volume = (float)((ntohl(val32) >> 16) & 0xFFFF) / 256.f;
 	ULOGD("- mvhd: volume=%.2f", volume);
 
 	/* 'reserved' */
@@ -451,7 +451,7 @@ static off_t mp4_box_tkhd_read(const struct mp4_file *mp4,
 
 	/* 'volume' & 'reserved' */
 	MP4_READ_32(mp4->fd, val32, boxReadBytes);
-	float volume = (float)((ntohl(val32) >> 16) & 0xFFFF) / 256.;
+	float volume = (float)((ntohl(val32) >> 16) & 0xFFFF) / 256.f;
 	ULOGD("- tkhd: volume=%.2f", volume);
 
 	/* 'matrix' */
@@ -460,12 +460,12 @@ static off_t mp4_box_tkhd_read(const struct mp4_file *mp4,
 
 	/* 'width' */
 	MP4_READ_32(mp4->fd, val32, boxReadBytes);
-	float width = (float)ntohl(val32) / 65536.;
+	float width = (float)ntohl(val32) / 65536.f;
 	ULOGD("- tkhd: width=%.2f", width);
 
 	/* 'height' */
 	MP4_READ_32(mp4->fd, val32, boxReadBytes);
-	float height = (float)ntohl(val32) / 65536.;
+	float height = (float)ntohl(val32) / 65536.f;
 	ULOGD("- tkhd: height=%.2f", height);
 
 	/* Skip the rest of the box */
@@ -720,7 +720,7 @@ static off_t mp4_box_smhd_read(const struct mp4_file *mp4, off_t maxBytes)
 	/* 'balance' & 'reserved' */
 	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 	float balance =
-		(float)((int16_t)((ntohl(val32) >> 16) & 0xFFFF)) / 256.;
+		(float)((int16_t)((ntohl(val32) >> 16) & 0xFFFF)) / 256.f;
 	ULOGD("- smhd: balance=%.2f", balance);
 
 	/* Skip the rest of the box */
@@ -858,15 +858,14 @@ static off_t mp4_box_hdlr_read(const struct mp4_file *mp4,
 	}
 
 	/* 'reserved' */
-	unsigned int k;
-	for (k = 0; k < 3; k++)
+	for (unsigned int k = 0; k < 3; k++)
 		MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
 	char name[100];
 	memset(name, 0, sizeof(name));
-	for (k = 0; (k < sizeof(name) - 1) && (boxReadBytes < maxBytes); k++) {
+	for (unsigned int k = 0; k < (sizeof(name) - 1); k++) {
 		MP4_READ_8(mp4->fd, name[k], boxReadBytes);
-		if (name[k] == '\0')
+		if ((name[k] == '\0') || (boxReadBytes >= maxBytes))
 			break;
 	}
 	ULOGD("- hdlr: name=%s", name);
@@ -1261,7 +1260,7 @@ static off_t mp4_box_esds_read(const struct mp4_file *mp4,
 	}
 	ULOGD("- esds: ESDescriptor tag:0x%x", tag);
 
-	off_t size = 0;
+	uint32_t size = 0;
 	int cnt = 0;
 	do {
 		MP4_READ_8(mp4->fd, val8, boxReadBytes);
@@ -1499,12 +1498,12 @@ static off_t mp4_box_stsd_read(const struct mp4_file *mp4,
 
 			/* 'horizresolution' */
 			MP4_READ_32(mp4->fd, val32, boxReadBytes);
-			float horizresolution = (float)(ntohl(val32)) / 65536.;
+			float horizresolution = (float)(ntohl(val32)) / 65536.f;
 			ULOGD("- stsd: horizresolution=%.2f", horizresolution);
 
 			/* 'vertresolution' */
 			MP4_READ_32(mp4->fd, val32, boxReadBytes);
-			float vertresolution = (float)(ntohl(val32)) / 65536.;
+			float vertresolution = (float)(ntohl(val32)) / 65536.f;
 			ULOGD("- stsd: vertresolution=%.2f", vertresolution);
 
 			/* 'reserved' */
@@ -1691,17 +1690,15 @@ static off_t mp4_box_stsd_read(const struct mp4_file *mp4,
 
 			/* 'data_reference_index' */
 			MP4_READ_16(mp4->fd, val16, boxReadBytes);
-			uint16_t dataReferenceIndex = ntohl(val16);
+			uint16_t dataReferenceIndex = ntohs(val16);
 			ULOGD("- stsd: size=%d", dataReferenceIndex);
 
 			char str[1000];
 			memset(str, 0, sizeof(str));
-			unsigned int k;
-			for (k = 0;
-			     (k < sizeof(str) - 1) && (boxReadBytes < maxBytes);
-			     k++) {
+			for (unsigned int k = 0; k < (sizeof(str) - 1); k++) {
 				MP4_READ_8(mp4->fd, str[k], boxReadBytes);
-				if (str[k] == '\0')
+				if ((str[k] == '\0') ||
+				    (boxReadBytes >= maxBytes))
 					break;
 			}
 			len = mp4_validate_str_len(str, sizeof(str));
@@ -1710,11 +1707,10 @@ static off_t mp4_box_stsd_read(const struct mp4_file *mp4,
 			ULOGD("- stsd: content_encoding=%s", str);
 
 			memset(str, 0, sizeof(str));
-			for (k = 0;
-			     (k < sizeof(str) - 1) && (boxReadBytes < maxBytes);
-			     k++) {
+			for (unsigned int k = 0; k < (sizeof(str) - 1); k++) {
 				MP4_READ_8(mp4->fd, str[k], boxReadBytes);
-				if (str[k] == '\0')
+				if ((str[k] == '\0') ||
+				    (boxReadBytes >= maxBytes))
 					break;
 			}
 			len = mp4_validate_str_len(str, sizeof(str));
@@ -2438,7 +2434,12 @@ static off_t mp4_box_meta_data_read(struct mp4_file *mp4,
 	/* 'reserved' */
 	MP4_READ_32(mp4->fd, val32, boxReadBytes);
 
-	unsigned int valueLen = maxBytes - boxReadBytes;
+	off_t valueLenOff = maxBytes - boxReadBytes;
+	ULOG_ERRNO_RETURN_ERR_IF((valueLenOff < 0) ||
+					 ((uintmax_t)valueLenOff > SIZE_MAX),
+				 EINVAL);
+
+	size_t valueLen = (size_t)valueLenOff;
 
 	if (clazz == MP4_METADATA_CLASS_UTF8) {
 		switch (box->parent->type & 0xFFFFFF) {
@@ -2451,7 +2452,8 @@ static off_t mp4_box_meta_data_read(struct mp4_file *mp4,
 		case MP4_METADATA_TAG_TYPE_MODEL:
 		case MP4_METADATA_TAG_TYPE_VERSION:
 		case MP4_METADATA_TAG_TYPE_ENCODER: {
-			uint32_t idx = mp4->udtaMetadataParseIdx++;
+			uint32_t idx = mp4->udtaMetadataParseIdx;
+			mp4->udtaMetadataParseIdx += 1;
 			mp4->udtaMetadataKey[idx] = malloc(5);
 			if (mp4->udtaMetadataKey[idx] == NULL) {
 				ULOG_ERRNO("malloc", ENOMEM);
@@ -3071,7 +3073,7 @@ int mp4_generate_avc_decoder_config(const uint8_t *sps,
 				    uint8_t *avcc,
 				    unsigned int *avcc_size)
 {
-	off_t off = 0;
+	unsigned int off = 0;
 
 	ULOG_ERRNO_RETURN_ERR_IF(sps == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(sps_size == 0, EINVAL);
@@ -3093,7 +3095,7 @@ int mp4_generate_avc_decoder_config(const uint8_t *sps,
 	avcc[off++] = 0xFF;
 	avcc[off++] = 0xE1;
 	/* 'sequenceParameterSetLength' */
-	avcc[off++] = sps_size >> 8;
+	avcc[off++] = (uint8_t)(pps_size >> 8);
 	avcc[off++] = sps_size & 0xFF;
 	/* 'sequenceParameterSetNALUnit' */
 	memcpy(&avcc[off], sps, sps_size);
@@ -3101,7 +3103,7 @@ int mp4_generate_avc_decoder_config(const uint8_t *sps,
 	/* 'numOfPictureParameterSets' */
 	avcc[off++] = 0x01;
 	/* 'pictureParameterSetLength' */
-	avcc[off++] = pps_size >> 8;
+	avcc[off++] = (uint8_t)(pps_size >> 8);
 	avcc[off++] = pps_size & 0xFF;
 	/* 'pictureParameterSetNALUnit' */
 	memcpy(&avcc[off], pps, pps_size);
@@ -3118,8 +3120,8 @@ MP4_API int mp4_generate_chapter_sample(const char *chapter_str,
 {
 	uint16_t val16;
 	uint8_t *buf = NULL;
-	size_t buf_size = 0;
-	size_t chap_len = 0;
+	unsigned int buf_size = 0;
+	uint16_t chap_len = 0;
 
 	ULOG_ERRNO_RETURN_ERR_IF(buffer == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(buffer_size == NULL, EINVAL);

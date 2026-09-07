@@ -159,6 +159,7 @@ struct mp4_track_info {
 	const char *content_encoding;
 	const char *mime_format;
 	int has_metadata;
+	uint32_t metadata_track_id;
 	const char *metadata_content_encoding;
 	const char *metadata_mime_format;
 };

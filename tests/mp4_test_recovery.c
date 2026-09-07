@@ -81,7 +81,7 @@ static int copy_file(const char *src, const char *dst)
 	FILE *out = fopen(dst, "wb");
 
 	char buf[1024];
-	int read = 0;
+	unsigned long read = 0;
 	ssize_t written = 0;
 
 	CU_ASSERT_PTR_NOT_NULL_FATAL(in);

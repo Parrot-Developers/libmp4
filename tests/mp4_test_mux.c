@@ -107,7 +107,7 @@ static void test_mp4_mux_api_set_file_cover(void)
 	res = mp4_mux_set_file_cover(mux, cover_type, NULL, cover_size);
 	CU_ASSERT_EQUAL(res, -EINVAL);
 
-	for (size_t i = MP4_METADATA_COVER_TYPE_UNKNOWN;
+	for (enum mp4_metadata_cover_type i = MP4_METADATA_COVER_TYPE_UNKNOWN;
 	     i <= MP4_METADATA_COVER_TYPE_BMP;
 	     i++) {
 		res = mp4_mux_set_file_cover(mux, i, cover, cover_size);
@@ -681,7 +681,8 @@ static void test_mp4_mux_api_add_track(void)
 	res = mp4_mux_add_track(mux, NULL);
 	CU_ASSERT_EQUAL(res, -EINVAL);
 
-	for (size_t i = MP4_TRACK_TYPE_UNKNOWN; i <= MP4_TRACK_TYPE_UNKNOWN;
+	for (enum mp4_track_type i = MP4_TRACK_TYPE_UNKNOWN;
+	     i <= MP4_TRACK_TYPE_CHAPTERS;
 	     i++) {
 		params_video_track_copy.type = i;
 		res = mp4_mux_add_track(mux, &params_video_track_copy);

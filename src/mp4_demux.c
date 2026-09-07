@@ -502,6 +502,7 @@ int mp4_demux_get_track_info(const struct mp4_demux *demux,
 	track_info->sample_offsets = tk->sampleOffset;
 	track_info->sample_sizes = tk->sampleSize;
 	track_info->has_metadata = (tk->metadata) ? 1 : 0;
+	track_info->metadata_track_id = (tk->metadata) ? tk->metadata->id : 0;
 	if (tk->metadata) {
 		track_info->metadata_content_encoding =
 			tk->metadata->contentEncoding;
@@ -519,7 +520,7 @@ int mp4_demux_get_track_info(const struct mp4_demux *demux,
 		track_info->audio_channel_count = tk->audioChannelCount;
 		track_info->audio_sample_size = tk->audioSampleSize;
 		track_info->audio_sample_rate =
-			(float)tk->audioSampleRate / 65536.;
+			(float)tk->audioSampleRate / 65536.f;
 	}
 
 	return 0;
@@ -682,12 +683,12 @@ int mp4_demux_get_track_sample(const struct mp4_demux *demux,
 			track_sample->size = 0;
 			_ret = -errno;
 			ULOG_ERRNO("read", -_ret);
-			return _ret;
+			return OFF_T_TO_ERRNO(_ret, EPROTO);
 		} else if (count != (ssize_t)sample_size) {
 			track_sample->size = 0;
 			_ret = -ENODATA;
 			ULOG_ERRNO("read", -_ret);
-			return _ret;
+			return OFF_T_TO_ERRNO(_ret, ENODATA);
 		}
 	} else if (sample_buffer && (sample_size > sample_buffer_size)) {
 		ULOGE("buffer too small (%d bytes, %d needed)",
@@ -723,7 +724,7 @@ int mp4_demux_get_track_sample(const struct mp4_demux *demux,
 					if (_ret == 0)
 						_ret = -ENODATA;
 					ULOG_ERRNO("read", -_ret);
-					return _ret;
+					return OFF_T_TO_ERRNO(_ret, ENODATA);
 				}
 			} else if (metadata_buffer &&
 				   (metadata_size > metadata_buffer_size)) {

@@ -268,7 +268,7 @@ static int read_time_vars(struct mp4_to_json_param *param,
 
 		/* 'duration' */
 		MP4_READ_32(param->file.fd, val32, *box_read_bytes);
-		duration = (uint64_t)ntohl(val32);
+		duration = ntohl(val32);
 		json_object_object_add(param->box.json,
 				       "duration",
 				       json_object_new_int64(duration));
@@ -311,7 +311,7 @@ static int read_version_flags_empty_box(struct mp4_to_json_param *param,
 static int read_container_box(struct mp4_to_json_param *param,
 			      off_t *box_read_bytes)
 {
-	off_t err = 0;
+	int err = 0;
 	off_t container_size = param->box.size;
 	struct json_object *mp4_json_box = param->parent.json;
 	struct json_object *old_box = param->box.json;
@@ -346,7 +346,7 @@ static int read_container_max_n_box(struct mp4_to_json_param *param,
 				    off_t *box_read_bytes,
 				    uint32_t max)
 {
-	off_t err = 0;
+	int err = 0;
 	off_t container_size = param->box.size;
 	struct json_object *mp4_json_box = param->parent.json;
 	struct json_object *old_box = param->box.json;
@@ -859,14 +859,14 @@ static int read_mvhd_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 	read_time_vars(param, box_read_bytes, false);
 
 	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
-	float rate = (float)ntohl(val32) / 65536.;
+	float rate = (float)ntohl(val32) / 65536.f;
 	json_object_object_add(
-		param->box.json, "rate", json_object_new_int64(rate));
+		param->box.json, "rate", json_object_new_double(rate));
 
 	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
-	float volume = (float)((ntohl(val32) >> 16) & 0xFFFF) / 256.;
+	float volume = (float)((ntohl(val32) >> 16) & 0xFFFF) / 256.f;
 	json_object_object_add(
-		param->box.json, "volume", json_object_new_int64(volume));
+		param->box.json, "volume", json_object_new_double(volume));
 
 	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
 	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
@@ -938,8 +938,8 @@ static int read_co64_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 		chunk_offset = (uint64_t)ntohl(val32) << 32;
 		MP4_READ_32(param->file.fd, val32, *box_read_bytes);
 		chunk_offset |= (uint64_t)ntohl(val32) & 0xFFFFFFFFULL;
-		json_object_array_add(
-			json_arr, json_object_new_int64(ntohl(chunk_offset)));
+		json_object_array_add(json_arr,
+				      json_object_new_int64(chunk_offset));
 	}
 
 	json_object_object_add(param->box.json, "chunk_entries", json_arr);
@@ -1008,7 +1008,7 @@ static int read_stsd_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 
 static int read_text_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 {
-	int res;
+	ssize_t res;
 	uint8_t val8;
 	uint8_t font_name_len;
 	uint16_t val16;
@@ -1071,14 +1071,14 @@ static int read_text_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 
 	/* Font number */
 	MP4_READ_16(param->file.fd, val16, *box_read_bytes);
-	font_number = htonl(val16);
+	font_number = htons(val16);
 	json_object_object_add(param->box.json,
 			       "font_number",
 			       json_object_new_int(font_number));
 
 	/* Font face */
 	MP4_READ_16(param->file.fd, val16, *box_read_bytes);
-	font_face = htonl(val16);
+	font_face = htons(val16);
 	json_object_object_add(
 		param->box.json, "font_face", json_object_new_int(font_face));
 
@@ -1448,9 +1448,9 @@ static int read_smhd_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 	read_version_flags(param, box_read_bytes);
 
 	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
-	balance = (float)((int16_t)((ntohl(val32) >> 16) & 0xFFFF)) / 256.;
+	balance = (float)((int16_t)((ntohl(val32) >> 16) & 0xFFFF)) / 256.f;
 	json_object_object_add(
-		param->box.json, "balance", json_object_new_int64(balance));
+		param->box.json, "balance", json_object_new_double(balance));
 
 	return skip_rest_of_box(param, box_read_bytes);
 }
@@ -1489,13 +1489,13 @@ static int read_avc1_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 			       "height",
 			       json_object_new_int64(ntohl(val32) & 0xFFFF));
 	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
-	horizresolution = (float)(ntohl(val32)) / 65536.;
+	horizresolution = (float)(ntohl(val32)) / 65536.f;
 	json_object_object_add(param->box.json,
 			       "horizontal_resolution",
 			       json_object_new_double(horizresolution));
 
 	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
-	vertresolution = (float)(ntohl(val32)) / 65536.;
+	vertresolution = (float)(ntohl(val32)) / 65536.f;
 	json_object_object_add(param->box.json,
 			       "vertical_resolution",
 			       json_object_new_double(vertresolution));
@@ -1560,13 +1560,13 @@ static int read_hvc1_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 			       "height",
 			       json_object_new_int64(ntohl(val32) & 0xFFFF));
 	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
-	horizresolution = (float)(ntohl(val32)) / 65536.;
+	horizresolution = (float)(ntohl(val32)) / 65536.f;
 	json_object_object_add(param->box.json,
 			       "horizontal_resolution",
 			       json_object_new_double(horizresolution));
 
 	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
-	vertresolution = (float)(ntohl(val32)) / 65536.;
+	vertresolution = (float)(ntohl(val32)) / 65536.f;
 	json_object_object_add(param->box.json,
 			       "vertical_resolution",
 			       json_object_new_double(vertresolution));
@@ -2184,7 +2184,7 @@ static int read_data_box(struct mp4_to_json_param *param, off_t *box_read_bytes)
 
 	MP4_READ_32(param->file.fd, val32, *box_read_bytes);
 
-	unsigned int valueLen = param->box.size - *box_read_bytes;
+	size_t valueLen = param->box.size - *box_read_bytes;
 
 	if (clazz == MP4_METADATA_CLASS_UTF8) {
 		if (valueLen > MAX_ALLOC_SIZE) {

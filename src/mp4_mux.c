@@ -211,8 +211,6 @@ int mp4_mux_track_compute_tts(const struct mp4_mux *mux,
 	int ret;
 	uint32_t nsamples;
 	uint64_t prev_dts;
-	uint64_t next_dts;
-	uint32_t diff;
 	uint32_t prev_diff;
 
 	if (track == NULL)
@@ -230,8 +228,14 @@ int mp4_mux_track_compute_tts(const struct mp4_mux *mux,
 	prev_diff = UINT32_MAX;
 	prev_dts = track->samples.decoding_times[0];
 	for (uint32_t i = 1; i < nsamples; i++) {
+		uint32_t diff;
+		uint64_t diff64;
+		uint64_t next_dts;
 		next_dts = track->samples.decoding_times[i];
-		diff = next_dts - prev_dts;
+		ULOG_ERRNO_RETURN_ERR_IF(next_dts < prev_dts, EPROTO);
+		diff64 = next_dts - prev_dts;
+		ULOG_ERRNO_RETURN_ERR_IF(diff64 > UINT32_MAX, EPROTO);
+		diff = (uint32_t)diff64;
 		/* Convert to timescale */
 		track->duration_moov += mp4_convert_timescale(
 			diff, track->timescale, mux->timescale);
@@ -746,11 +750,12 @@ int mp4_mux_sort_tracks(struct mp4_mux *mux)
 	list_init(&new_list);
 
 	track_id = 1;
-	for (size_t i = TRACK_TYPE_MAX_PRIORITY; i <= TRACK_TYPE_MIN_PRIORITY;
+	for (unsigned int i = TRACK_TYPE_MAX_PRIORITY;
+	     i <= TRACK_TYPE_MIN_PRIORITY;
 	     i++) {
 		enum mp4_track_type type = mp4_mux_track_type_from_priority(i);
 		if (type == MP4_TRACK_TYPE_UNKNOWN) {
-			ULOGE("invalid track priority: %zu", i);
+			ULOGE("invalid track priority: %u", i);
 			continue;
 		}
 		for (size_t j = 0; j < 2; j++) {
@@ -791,7 +796,7 @@ static int mp4_mux_sync_internal(struct mp4_mux *mux, bool allow_boxes_after)
 	struct mp4_mux_metadata *meta;
 	struct mp4_box *moov;
 	int ret;
-	uint32_t duration = 0;
+	uint64_t duration = 0;
 	off_t end;
 	off_t err;
 	off_t written;
@@ -1136,7 +1141,7 @@ static int mp4_mux_sync_internal(struct mp4_mux *mux, bool allow_boxes_after)
 			mux->data_offset -
 				(mux->tables.offset + mux->boxes_offset));
 		if (end == -1) {
-			ret = -end;
+			ret = (int)-end;
 			ULOG_ERRNO("mp4_box_free_write", -ret);
 			goto out;
 		}
@@ -1180,7 +1185,15 @@ static int mp4_mux_sync_internal(struct mp4_mux *mux, bool allow_boxes_after)
 			goto out;
 		}
 
-		uint32_t val32 = htonl(mux->data_offset - mux->boxes_offset);
+		off_t offset = mux->data_offset - mux->boxes_offset;
+
+		if ((offset < 0) || (offset > UINT32_MAX)) {
+			ret = -EINVAL;
+			ULOG_ERRNO("offset out of range", -ret);
+			goto out;
+		}
+
+		uint32_t val32 = htonl((uint32_t)offset);
 		err = write(mux->fd, &val32, sizeof(uint32_t));
 		if (err != sizeof(uint32_t)) {
 			if (err < 0) {
@@ -1486,7 +1499,8 @@ MP4_API int mp4_mux_track_set_audio_specific_config(const struct mp4_mux *mux,
 
 	ULOG_ERRNO_RETURN_ERR_IF(mux == NULL, EINVAL);
 	ULOG_ERRNO_RETURN_ERR_IF(track_handle == 0, EINVAL);
-	ULOG_ERRNO_RETURN_ERR_IF(asc == NULL || asc_size == 0, EINVAL);
+	ULOG_ERRNO_RETURN_ERR_IF(
+		asc == NULL || asc_size == 0 || asc_size > UINT32_MAX, EINVAL);
 
 	track = mp4_mux_track_find_by_handle(mux, track_handle);
 	if (!track)
@@ -1495,7 +1509,7 @@ MP4_API int mp4_mux_track_set_audio_specific_config(const struct mp4_mux *mux,
 		return -EINVAL;
 
 	track->audio.codec = MP4_AUDIO_CODEC_AAC_LC;
-	track->audio.specific_config_size = asc_size;
+	track->audio.specific_config_size = (uint32_t)asc_size;
 	free(track->audio.specific_config);
 	track->audio.specific_config = malloc(asc_size);
 	if (track->audio.specific_config == NULL)
@@ -1736,7 +1750,7 @@ MP4_API int mp4_mux_track_add_scattered_sample(
 	struct iovec stack_iov[MP4_DEFAULT_BUFFER_COUNT];
 	struct iovec *iov = stack_iov;
 	ssize_t written;
-	ssize_t total_size = 0;
+	uint32_t total_size = 0;
 	off_t offset = 0;
 
 	ULOG_ERRNO_RETURN_ERR_IF(mux == NULL, EINVAL);
@@ -1778,7 +1792,7 @@ MP4_API int mp4_mux_track_add_scattered_sample(
 		total_size += sample->len[i];
 	}
 
-	ULOGD("adding a %ssample of size %zu at dts %" PRIi64
+	ULOGD("adding a %ssample of size %" PRIu32 " at dts %" PRIi64
 	      " to track %d(type %d)",
 	      sample->sync ? "sync " : "",
 	      total_size,

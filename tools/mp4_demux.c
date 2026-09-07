@@ -185,14 +185,11 @@ static void print_tracks(const struct mp4_demux *demux)
 		}
 		duration_usec =
 			mp4_sample_time_to_usec(tk.duration, tk.timescale);
-		unsigned int hrs = (unsigned int)((duration_usec + 500000) /
-						  1000000 / 60 / 60);
+		unsigned int hrs = (duration_usec + 500000) / 1000000 / 60 / 60;
 		unsigned int min =
-			(unsigned int)((duration_usec + 500000) / 1000000 / 60 -
-				       hrs * 60);
-		unsigned int sec =
-			(unsigned int)((duration_usec + 500000) / 1000000 -
-				       hrs * 60 * 60 - min * 60);
+			(duration_usec + 500000) / 1000000 / 60 - hrs * 60;
+		unsigned int sec = (duration_usec + 500000) / 1000000 -
+				   hrs * 60 * 60 - min * 60;
 		printf("  duration: %02d:%02d:%02d\n", hrs, min, sec);
 		printf("  creation time: %s\n", creation_time_str);
 		printf("  modification time: %s\n", modification_time_str);

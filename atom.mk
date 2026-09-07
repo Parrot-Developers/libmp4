@@ -102,3 +102,8 @@ LOCAL_LIBRARIES := \
 include $(BUILD_EXECUTABLE)
 
 endif
+
+libmp4_subdirs := \
+	libmp4-remux
+
+include $(patsubst %,$(LOCAL_PATH)/%/atom.mk,$(libmp4_subdirs))
